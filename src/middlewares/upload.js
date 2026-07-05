@@ -24,6 +24,10 @@ export const uploadToImageKit = async (files) => {
       return [];
     }
 
+    if (!imagekit) {
+      throw new Error('ImageKit is not configured. Please define IMAGEKIT_PUBLIC_KEY, IMAGEKIT_PRIVATE_KEY, and IMAGEKIT_URL_ENDPOINT.');
+    }
+
     const uploadPromises = files.map((file) =>
       imagekit.upload({
         file: file.buffer,
@@ -36,12 +40,16 @@ export const uploadToImageKit = async (files) => {
     return results.map((result) => result.url);
   } catch (error) {
     console.error('ImageKit upload error:', error);
-    throw new Error('Failed to upload images to ImageKit');
+    throw new Error(error.message || 'Failed to upload images to ImageKit');
   }
 };
 
 export const deleteFromImageKit = async (urls) => {
   if (!urls || urls.length === 0) return;
+  if (!imagekit) {
+    console.warn('ImageKit is not configured. Skipping image deletion.');
+    return;
+  }
 
   const deletePromises = urls.map(async (url) => {
     try {

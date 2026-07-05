@@ -55,19 +55,20 @@ export const extractToken = (req) => {
  * Set token cookies in response securely
  */
 export const setTokenCookie = (res, accessToken, refreshToken) => {
+    const isProd = config.env === 'production';
     if (accessToken) {
         res.cookie('token', accessToken, {
             httpOnly: true,
-            secure: config.env === 'production',
-            sameSite: 'lax',
+            secure: isProd,
+            sameSite: isProd ? 'none' : 'lax',
             maxAge: 30 * 60 * 1000, // 30 mins
         });
     }
     if (refreshToken) {
         res.cookie('refreshToken', refreshToken, {
             httpOnly: true, // Prevents JavaScript access (XSS defense)
-            secure: config.env === 'production',
-            sameSite: 'lax',
+            secure: isProd,
+            sameSite: isProd ? 'none' : 'lax',
             path: '/api/auth', // Transmitted only to auth endpoints
             maxAge: 48 * 60 * 60 * 1000, // 48 hours
         });
@@ -78,6 +79,16 @@ export const setTokenCookie = (res, accessToken, refreshToken) => {
  * Clear token cookies
  */
 export const clearTokenCookie = (res) => {
-    res.clearCookie('token');
-    res.clearCookie('refreshToken', { path: '/api/auth' });
+    const isProd = config.env === 'production';
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+    });
+    res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+        path: '/api/auth',
+    });
 };

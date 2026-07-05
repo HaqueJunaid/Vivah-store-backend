@@ -21,7 +21,31 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: '*',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      // In development, allow any localhost origin
+      const isLocalhost = config.env === 'development' && 
+        (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'));
+
+      if (isLocalhost) {
+        return callback(null, true);
+      }
+
+      if (config.client_origin) {
+        const allowedOrigins = config.client_origin.split(',').map(o => o.trim());
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+          return callback(null, true);
+        }
+      } else {
+        // Fallback: if no client origin is configured, reflect the requesting origin
+        return callback(null, true);
+      }
+
+      return callback(null, false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
     credentials: true,
   })
 );

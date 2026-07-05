@@ -4,6 +4,7 @@ dotenv.config();
 export const config = {
     port: process.env.PORT || 3000,
     mongo_url: process.env.MONGO_URL,
+    client_origin: process.env.CLIENT_ORIGIN,
     env: process.env.NODE_ENV || 'development',
     jwt: {
         accessSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'your-access-secret-key',
