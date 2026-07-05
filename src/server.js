@@ -34,10 +34,14 @@ app.use(
       }
 
       if (config.client_origin) {
-        const allowedOrigins = config.client_origin.split(',').map(o => o.trim());
-        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        const allowedOrigins = config.client_origin.split(',').map(o => o.trim().toLowerCase().replace(/\/$/, ''));
+        const cleanOrigin = origin.trim().toLowerCase().replace(/\/$/, '');
+        
+        if (allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes('*')) {
           return callback(null, true);
         }
+        
+        console.warn(`CORS blocked: origin '${origin}' is not in allowed origins [${allowedOrigins.join(', ')}]`);
       } else {
         // Fallback: if no client origin is configured, reflect the requesting origin
         return callback(null, true);
