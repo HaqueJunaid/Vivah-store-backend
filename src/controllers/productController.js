@@ -99,11 +99,23 @@ export const createProduct = async (req, res) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
+    const page = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+
+    let query = Product.find().sort({ createdAt: -1, _id: -1 });
+
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      query = query.skip(skip).limit(limit);
+    }
+
+    const products = await query;
+    const total = await Product.countDocuments();
 
     res.status(200).json({
       success: true,
       count: products.length,
+      total,
       products,
     });
   } catch (error) {
