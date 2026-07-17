@@ -11,6 +11,7 @@ import productRoutes from './routes/productRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
 import addressRoutes from './routes/addressRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
+import orderRoutes from './routes/orderRoutes.js';
 import aj from './config/arcjet.js';
 import { isSpoofedBot } from '@arcjet/inspect';
 
@@ -100,6 +101,9 @@ app.use('/api/addresses', addressRoutes);
 
 // Contact routes
 app.use('/api/contact', contactRoutes);
+
+// Order routes
+app.use('/api/orders', orderRoutes);
 
 app.listen(config.port, () => {
   console.log(`Server is running on port ${config.port}`);

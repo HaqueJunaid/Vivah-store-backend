@@ -1,6 +1,7 @@
 import { Product } from '../models/Product.js';
 import { User } from '../models/User.js';
 import { uploadToImageKit, deleteFromImageKit } from '../middlewares/upload.js';
+import mongoose from 'mongoose';
 
 export const createProduct = async (req, res) => {
   try {
@@ -101,8 +102,46 @@ export const getAllProducts = async (req, res) => {
   try {
     const page = req.query.page ? parseInt(req.query.page, 10) : null;
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const search = req.query.search || '';
+    const category = req.query.category || '';
+    const stockStatus = req.query.stockStatus || '';
+    const sortBy = req.query.sortBy || 'Default';
 
-    let query = Product.find().sort({ createdAt: -1, _id: -1 });
+    let filter = {};
+
+    if (search) {
+      const searchRegex = { $regex: search, $options: 'i' };
+      filter.$or = [
+        { title: searchRegex },
+        { description: searchRegex }
+      ];
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        filter.$or.push({ _id: search });
+      }
+    }
+
+    if (category && category !== 'All') {
+      filter.category = category.toLowerCase();
+    }
+
+    if (stockStatus && stockStatus !== 'All') {
+      if (stockStatus === 'In Stock') {
+        filter.quantity = { $gt: 0 };
+      } else if (stockStatus === 'Out of Stock') {
+        filter.quantity = { $lte: 0 };
+      }
+    }
+
+    let sortOption = { createdAt: -1, _id: -1 };
+    if (sortBy === 'Price: Low to High') {
+      sortOption = { price: 1 };
+    } else if (sortBy === 'Price: High to Low') {
+      sortOption = { price: -1 };
+    } else if (sortBy === 'Name: A-Z') {
+      sortOption = { title: 1 };
+    }
+
+    let query = Product.find(filter).sort(sortOption);
 
     if (page && limit) {
       const skip = (page - 1) * limit;
@@ -110,7 +149,7 @@ export const getAllProducts = async (req, res) => {
     }
 
     const products = await query;
-    const total = await Product.countDocuments();
+    const total = await Product.countDocuments(filter);
 
     res.status(200).json({
       success: true,

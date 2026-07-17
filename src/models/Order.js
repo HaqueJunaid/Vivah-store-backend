@@ -1,0 +1,78 @@
+import mongoose from 'mongoose';
+
+const orderItemSchema = new mongoose.Schema({
+    product: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Product',
+        required: true,
+    },
+    name: {
+        type: String,
+        required: true,
+    },
+    price: {
+        type: Number,
+        required: true,
+    },
+    quantity: {
+        type: Number,
+        required: true,
+    },
+    selectedVariant: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
+    },
+    customizations: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
+    },
+    uploadedImage: {
+        type: String,
+        default: '',
+    }
+});
+
+const orderSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        index: true,
+    },
+    items: [orderItemSchema],
+    shippingAddress: {
+        firstName: { type: String, required: true },
+        lastName: { type: String, required: true },
+        company: { type: String, default: '' },
+        country: { type: String, required: true },
+        address: { type: String, required: true },
+        apartment: { type: String, default: '' },
+        city: { type: String, required: true },
+        postalCode: { type: String, required: true },
+        phone: { type: String, required: true },
+    },
+    totalAmount: {
+        type: Number,
+        required: true,
+    },
+    paymentMethod: {
+        type: String,
+        enum: ['cod', 'card', 'upi', 'mock'],
+        default: 'mock',
+    },
+    paymentStatus: {
+        type: String,
+        enum: ['Pending', 'Completed', 'Failed'],
+        default: 'Pending',
+    },
+    status: {
+        type: String,
+        enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
+        default: 'Pending',
+        index: true,
+    },
+}, {
+    timestamps: true,
+});
+
+export const Order = mongoose.model('Order', orderSchema);

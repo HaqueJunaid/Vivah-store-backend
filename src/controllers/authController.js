@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { User } from '../models/User.js';
+import { Order } from '../models/Order.js';
 import { sendOTPEmail, sendWelcomeEmail } from '../utils/emailService.js';
 import { OAuth2Client } from 'google-auth-library';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken, setTokenCookie, clearTokenCookie } from '../utils/tokenService.js';
@@ -400,18 +401,27 @@ export const resendOTP = async (req, res) => {
 export const getAllUsers = async (req, res) => {
     try {
         const users = await User.find({}, '-password');
-        res.status(200).json({
-            success: true,
-            users: users.map(user => ({
+        const usersWithStats = [];
+
+        for (const user of users) {
+            const userOrders = await Order.find({ user: user._id });
+            const totalSpent = userOrders.reduce((sum, ord) => sum + ord.totalAmount, 0);
+
+            usersWithStats.push({
                 id: user._id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
                 status: user.status || (user.isVerified ? 'Active' : 'Inactive'),
                 date: user.createdAt ? new Date(user.createdAt).toISOString().split('T')[0] : 'N/A',
-                ordersCount: 0,
-                totalSpent: 0,
-            })),
+                ordersCount: userOrders.length,
+                totalSpent,
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            users: usersWithStats,
         });
     } catch (error) {
         console.error('Get all users error:', error);
