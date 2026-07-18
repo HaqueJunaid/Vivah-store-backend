@@ -3,6 +3,7 @@ import { Cart } from '../models/Cart.js';
 import { Address } from '../models/Address.js';
 import { Product } from '../models/Product.js';
 import mongoose from 'mongoose';
+import { deleteFromImageKit } from '../middlewares/upload.js';
 
 export const createOrder = async (req, res) => {
     try {
@@ -265,3 +266,53 @@ export const updateOrderStatus = async (req, res) => {
         });
     }
 };
+
+export const deleteOrder = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const order = await Order.findById(id);
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found.',
+            });
+        }
+
+        const allowedStatuses = ['Delivered', 'Cancelled'];
+        if (!allowedStatuses.includes(order.status)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Only fulfilled (Delivered) or Cancelled orders can be deleted.',
+            });
+        }
+
+        // Delete uploaded images from ImageKit
+        const imageUrls = order.items
+            .map(item => item.uploadedImage)
+            .filter(url => typeof url === 'string' && url.length > 0);
+
+        if (imageUrls.length > 0) {
+            try {
+                await deleteFromImageKit(imageUrls);
+            } catch (imgError) {
+                console.error('Failed to delete some images from ImageKit:', imgError);
+            }
+        }
+
+        // Delete the order from MongoDB
+        await Order.findByIdAndDelete(id);
+
+        res.status(200).json({
+            success: true,
+            message: 'Order and its associated files deleted successfully.',
+        });
+    } catch (error) {
+        console.error('Delete order error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to delete order.',
+        });
+    }
+};
+
