@@ -24,7 +24,7 @@ transporter.verify((error, success) => {
 // Verification Email
 export const sendOTPEmail = async (email, otp, userName) => {
     const mailOptions = {
-        from: config.email.user,
+        from: config.email.from,
         to: email,
         subject: 'Email Verification - OTP',
         html: emailTemplates.otpVerification(userName, otp),
@@ -42,7 +42,7 @@ export const sendOTPEmail = async (email, otp, userName) => {
 // Welcome Email
 export const sendWelcomeEmail = async (email, userName) => {
     const mailOptions = {
-        from: config.email.user,
+        from: config.email.from,
         to: email,
         subject: 'Welcome to Our Service',
         html: emailTemplates.welcomeEmail(userName),
@@ -61,7 +61,7 @@ export const sendWelcomeEmail = async (email, userName) => {
 // Contact Form Notification Email to Owner
 export const sendContactEmail = async (name, email, phone, message) => {
     const mailOptions = {
-        from: config.email.user,
+        from: config.email.from,
         to: config.email.user,
         replyTo: email,
         subject: `New VivahStore Contact Message from ${name}`,
@@ -121,7 +121,7 @@ export const sendContactEmail = async (name, email, phone, message) => {
 // Password Reset Email
 export const sendPasswordResetEmail = async (email, resetUrl, userName) => {
     const mailOptions = {
-        from: config.email.user,
+        from: config.email.from,
         to: email,
         subject: 'Password Reset Request',
         html: emailTemplates.passwordResetEmail(userName, resetUrl),
