@@ -118,6 +118,24 @@ export const sendContactEmail = async (name, email, phone, message) => {
     }
 };
 
+// Password Reset Email
+export const sendPasswordResetEmail = async (email, resetUrl, userName) => {
+    const mailOptions = {
+        from: config.email.user,
+        to: email,
+        subject: 'Password Reset Request',
+        html: emailTemplates.passwordResetEmail(userName, resetUrl),
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        return { success: true, message: 'Password reset email sent' };
+    } catch (error) {
+        console.error('Error sending password reset email:', error);
+        throw new Error('Failed to send password reset email');
+    }
+};
+
 // Email Tempelate
 const emailTemplates = {
     otpVerification: (name, otp) => `
@@ -357,6 +375,54 @@ const emailTemplates = {
                     <p><strong>Vivah Store Stationery &amp; Graphic Studio</strong></p>
                     <p>Surat, Gujarat, India</p>
                     <p>Thank you for choosing luxury. Enjoy your journey with us!</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `,
+    
+    passwordResetEmail: (name, resetUrl) => `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #faf9f6; margin: 0; padding: 40px 20px; }
+                .container { max-width: 560px; margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 24px; border: 1px solid #f0ece6; box-shadow: 0 8px 30px rgba(0,0,0,0.02); }
+                .header { text-align: center; margin-bottom: 35px; }
+                .header h1 { color: #e41f66; margin: 0; font-size: 32px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+                .content { color: #555555; line-height: 1.7; font-size: 14px; }
+                .greeting { font-size: 20px; color: #111111; font-weight: 700; margin-bottom: 15px; }
+                .button-container { text-align: center; margin: 35px 0 20px 0; }
+                .button { display: inline-block; background-color: #e41f66; color: #ffffff !important; padding: 14px 35px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; box-shadow: 0 4px 15px rgba(228, 31, 102, 0.2); }
+                .warning { background-color: #fff9fa; border-left: 3px solid #e41f66; padding: 18px; margin: 30px 0 15px 0; border-radius: 8px; font-size: 12px; color: #777777; line-height: 1.6; }
+                .footer { text-align: center; color: #a0a0a0; font-size: 11px; border-top: 1px solid #f2ede7; padding-top: 25px; margin-top: 40px; line-height: 1.6; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Vivah Store</h1>
+                </div>
+                
+                <div class="content">
+                    <div class="greeting">Hi ${name},</div>
+                    <p>You are receiving this email because you (or someone else) have requested the reset of the password for your account.</p>
+                    <p>Please click on the following button to complete the process. This link is valid for 15 minutes.</p>
+                    
+                    <div class="button-container">
+                        <a href="${resetUrl}" class="button" target="_blank">Reset Password</a>
+                    </div>
+                    
+                    <div class="warning">
+                        If you did not request this, please ignore this email and your password will remain unchanged.
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p><strong>Vivah Store</strong></p>
+                    <p>This is an automated message. Please do not reply.</p>
                 </div>
             </div>
         </body>

@@ -10,6 +10,8 @@ import {
     refreshToken,
     getAllUsers,
     updateUserStatus,
+    forgotPassword,
+    resetPassword,
 } from '../controllers/authController.js';
 import { protect, admin } from '../middlewares/auth.js';
 
@@ -22,6 +24,8 @@ router.post('/login', login);
 router.post('/google', googleAuth);
 router.post('/resend-otp', resendOTP);
 router.post('/refresh-token', refreshToken);
+router.post('/forgot-password', forgotPassword);
+router.put('/reset-password/:token', resetPassword);
 
 // Protected routes
 router.get('/me', protect, getCurrentUser);
