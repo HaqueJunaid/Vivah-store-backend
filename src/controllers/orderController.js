@@ -4,6 +4,7 @@ import { Address } from '../models/Address.js';
 import { Product } from '../models/Product.js';
 import mongoose from 'mongoose';
 import { deleteFromImageKit } from '../middlewares/upload.js';
+import { Setting } from '../models/Setting.js';
 
 export const createOrder = async (req, res) => {
     try {
@@ -37,7 +38,7 @@ export const createOrder = async (req, res) => {
 
         // Validate products and check stock
         const orderItems = [];
-        let totalAmount = 0;
+        let subtotal = 0;
 
         for (const item of cart.items) {
             const product = await Product.findById(item.productId);
@@ -65,8 +66,17 @@ export const createOrder = async (req, res) => {
                 uploadedImage: item.uploadedImage || '',
             });
 
-            totalAmount += product.price * item.productQuantity;
+            subtotal += product.price * item.productQuantity;
         }
+
+        // Fetch settings for gst and shipping
+        let settings = await Setting.findOne();
+        if (!settings) {
+            settings = { gstRate: 18, shippingCost: 50 };
+        }
+        
+        const gstAmount = subtotal * (settings.gstRate / 100);
+        const totalAmount = subtotal + gstAmount + settings.shippingCost;
 
         // Deduct stock quantities from database
         for (const item of cart.items) {
@@ -90,6 +100,9 @@ export const createOrder = async (req, res) => {
                 postalCode: address.postalCode,
                 phone: address.phone,
             },
+            subtotal,
+            gstAmount,
+            shippingCost: settings.shippingCost,
             totalAmount,
             paymentMethod,
             paymentStatus: paymentMethod === 'cod' ? 'Pending' : 'Completed',

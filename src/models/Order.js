@@ -51,6 +51,18 @@ const orderSchema = new mongoose.Schema({
         postalCode: { type: String, required: true },
         phone: { type: String, required: true },
     },
+    subtotal: {
+        type: Number,
+        default: 0
+    },
+    shippingCost: {
+        type: Number,
+        default: 0
+    },
+    gstAmount: {
+        type: Number,
+        default: 0
+    },
     totalAmount: {
         type: Number,
         required: true,
