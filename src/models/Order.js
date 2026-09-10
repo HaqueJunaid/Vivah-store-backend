@@ -18,6 +18,10 @@ const orderItemSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
+    productImage: {
+        type: String,
+        default: '',
+    },
     selectedVariant: {
         type: mongoose.Schema.Types.Mixed,
         default: null,
@@ -86,5 +90,10 @@ const orderSchema = new mongoose.Schema({
 }, {
     timestamps: true,
 });
+
+// Performance indexes for faster querying and sorting
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ createdAt: -1 });
 
 export const Order = mongoose.model('Order', orderSchema);

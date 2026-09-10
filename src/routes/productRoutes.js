@@ -1,9 +1,22 @@
 import express from 'express';
-import { createProduct, getAllProducts, getProductByCategory, deleteProduct, getProductById, updateProduct, getSimilarProducts } from '../controllers/productController.js';
+import { createProduct, getAllProducts, getProductByCategory, deleteProduct, getProductById, updateProduct, getSimilarProducts, uploadCustomizationImage } from '../controllers/productController.js';
 import { protect, admin } from '../middlewares/auth.js';
 import { upload } from '../middlewares/upload.js';
 
 const router = express.Router();
+
+router.post(
+  '/upload-customization',
+  (req, res, next) => {
+    upload.single('image')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+      next();
+    });
+  },
+  uploadCustomizationImage
+);
 
 router.get('/', getAllProducts);
 router.get('/category/:category', getProductByCategory);

@@ -141,7 +141,7 @@ export const getAllProducts = async (req, res) => {
       sortOption = { title: 1 };
     }
 
-    let query = Product.find(filter).sort(sortOption);
+    let query = Product.find(filter).sort(sortOption).lean();
 
     if (page && limit) {
       const skip = (page - 1) * limit;
@@ -203,7 +203,7 @@ export const getProductByCategory = async (req, res) => {
         { category: { $regex: pattern, $options: 'i' } },
         { subCategory: { $regex: pattern, $options: 'i' } },
       ],
-    });
+    }).lean();
 
     res.status(200).json({
       success: true,
@@ -256,7 +256,7 @@ export const deleteProduct = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
-    const product = await Product.findById(id);
+    const product = await Product.findById(id).lean();
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -429,12 +429,12 @@ export const getSimilarProducts = async (req, res) => {
     let similarProducts = await Product.find({
       category: product.category,
       _id: { $ne: product._id }
-    }).limit(8);
+    }).limit(8).lean();
 
     if (similarProducts.length < 4) {
       const fallbackProducts = await Product.find({
         _id: { $ne: product._id, $nin: similarProducts.map(p => p._id) }
-      }).limit(8 - similarProducts.length);
+      }).limit(8 - similarProducts.length).lean();
       similarProducts = [...similarProducts, ...fallbackProducts];
     }
 
@@ -447,6 +447,39 @@ export const getSimilarProducts = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch similar products.',
+    });
+  }
+};
+
+// Upload Customization Image to ImageKit in /vivahstore/customizations folder
+export const uploadCustomizationImage = async (req, res) => {
+  try {
+    const file = req.file || (req.files && (req.files.image?.[0] || req.files.file?.[0] || (Array.isArray(req.files) ? req.files[0] : null)));
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file uploaded',
+      });
+    }
+
+    const urls = await uploadToImageKit([file], '/vivahstore/customizations');
+    if (!urls || urls.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to upload image to ImageKit',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      url: urls[0],
+      message: 'Customization image uploaded successfully to ImageKit',
+    });
+  } catch (error) {
+    console.error('Upload customization image error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to upload customization image',
     });
   }
 };

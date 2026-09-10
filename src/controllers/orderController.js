@@ -56,11 +56,15 @@ export const createOrder = async (req, res) => {
                 });
             }
 
+            const variantImage = (item.selectedVariant && typeof item.selectedVariant === 'object' && item.selectedVariant.images?.[0]) || '';
+            const prodImage = variantImage || item.productImage || (product.imageUrls && product.imageUrls[0]) || '';
+
             orderItems.push({
                 product: product._id,
                 name: product.title,
                 price: product.price,
                 quantity: item.productQuantity,
+                productImage: prodImage,
                 selectedVariant: item.selectedVariant,
                 customizations: item.customizations,
                 uploadedImage: item.uploadedImage || '',
@@ -130,7 +134,10 @@ export const createOrder = async (req, res) => {
 export const getMyOrders = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
+        const orders = await Order.find({ user: userId })
+            .populate('items.product', 'imageUrls title')
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.status(200).json({
             success: true,
@@ -156,7 +163,7 @@ export const getOrderById = async (req, res) => {
             });
         }
 
-        const order = await Order.findById(id);
+        const order = await Order.findById(id).populate('items.product', 'imageUrls title').lean();
         if (!order) {
             return res.status(404).json({
                 success: false,
@@ -165,7 +172,8 @@ export const getOrderById = async (req, res) => {
         }
 
         // Ensure user is authorized to view this order
-        if (req.user.role !== 'admin' && order.user.toString() !== req.user.id) {
+        const orderUserId = order.user?._id ? order.user._id.toString() : order.user?.toString();
+        if (req.user.role !== 'admin' && orderUserId !== req.user.id) {
             return res.status(403).json({
                 success: false,
                 message: 'Not authorized to view this order.',
@@ -210,15 +218,19 @@ export const getAllOrdersAdmin = async (req, res) => {
 
         const skip = (page - 1) * limit;
         const orders = await Order.find(query)
+            .populate('items.product', 'imageUrls title')
             .sort({ createdAt: -1 })
             .skip(skip)
-            .limit(limit);
+            .limit(limit)
+            .lean();
 
         const total = await Order.countDocuments(query);
 
-        // Compute total revenue of all orders in system (not just current page)
-        const allOrders = await Order.find({}, 'totalAmount');
-        const totalRevenue = allOrders.reduce((sum, ord) => sum + ord.totalAmount, 0);
+        // Compute total revenue of all orders in system using aggregate (database-level calculation)
+        const [revenueAgg] = await Order.aggregate([
+            { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+        ]);
+        const totalRevenue = revenueAgg ? revenueAgg.total : 0;
 
         res.status(200).json({
             success: true,

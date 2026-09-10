@@ -18,7 +18,7 @@ export const upload = multer({
   },
 });
 
-export const uploadToImageKit = async (files) => {
+export const uploadToImageKit = async (files, folder = '/vivahstore/products') => {
   try {
     if (!files || files.length === 0) {
       return [];
@@ -32,7 +32,7 @@ export const uploadToImageKit = async (files) => {
       imagekit.upload({
         file: file.buffer,
         fileName: `${Date.now()}-${file.originalname}`,
-        folder: '/vivahstore/products',
+        folder: folder,
       })
     );
 

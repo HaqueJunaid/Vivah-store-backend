@@ -24,9 +24,30 @@ export const register = async (req, res) => {
 
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
-            return res.status(400).json({
-                success: false,
-                message: 'User already exists with this email',
+            if (existingUser.isVerified) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'User already exists with this email',
+                });
+            }
+
+            // User already registered but not verified: update details and send a new OTP
+            const hashedPassword = await bcrypt.hash(password, 10);
+            const otp = generateOTP();
+            const otpExpire = getOTPExpireTime();
+
+            existingUser.name = name;
+            existingUser.password = hashedPassword;
+            existingUser.otp = otp;
+            existingUser.otpExpire = otpExpire;
+            await existingUser.save();
+
+            await sendOTPEmail(existingUser.email, otp, existingUser.name);
+
+            return res.status(200).json({
+                success: true,
+                message: 'Account already registered but not verified. A new verification OTP has been sent to your email.',
+                email: existingUser.email,
             });
         }
 
@@ -149,19 +170,30 @@ export const login = async (req, res) => {
             });
         }
 
-        if (!user.isVerified) {
-            return res.status(403).json({
-                success: false,
-                message: 'Please verify your email first',
-            });
-        }
-
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
         if (!isPasswordCorrect) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid email or password',
+            });
+        }
+
+        if (!user.isVerified) {
+            const otp = generateOTP();
+            const otpExpire = getOTPExpireTime();
+
+            user.otp = otp;
+            user.otpExpire = otpExpire;
+            await user.save();
+
+            await sendOTPEmail(user.email, otp, user.name);
+
+            return res.status(403).json({
+                success: false,
+                isUnverified: true,
+                email: user.email,
+                message: 'Your email is not verified. A new verification OTP has been sent to your email address.',
             });
         }
 
@@ -401,24 +433,39 @@ export const resendOTP = async (req, res) => {
 // Get all users (Admin only)
 export const getAllUsers = async (req, res) => {
     try {
-        const users = await User.find({}, '-password');
-        const usersWithStats = [];
+        const users = await User.find({}, '-password').lean();
 
-        for (const user of users) {
-            const userOrders = await Order.find({ user: user._id });
-            const totalSpent = userOrders.reduce((sum, ord) => sum + ord.totalAmount, 0);
+        // Single aggregation for all user order stats instead of N+1 database queries
+        const orderStats = await Order.aggregate([
+            {
+                $group: {
+                    _id: '$user',
+                    ordersCount: { $sum: 1 },
+                    totalSpent: { $sum: '$totalAmount' },
+                },
+            },
+        ]);
 
-            usersWithStats.push({
+        const statsMap = new Map();
+        for (const stat of orderStats) {
+            if (stat._id) {
+                statsMap.set(stat._id.toString(), stat);
+            }
+        }
+
+        const usersWithStats = users.map((user) => {
+            const userStat = statsMap.get(user._id.toString()) || { ordersCount: 0, totalSpent: 0 };
+            return {
                 id: user._id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
                 status: user.status || (user.isVerified ? 'Active' : 'Inactive'),
                 date: user.createdAt ? new Date(user.createdAt).toISOString().split('T')[0] : 'N/A',
-                ordersCount: userOrders.length,
-                totalSpent,
-            });
-        }
+                ordersCount: userStat.ordersCount,
+                totalSpent: userStat.totalSpent,
+            };
+        });
 
         res.status(200).json({
             success: true,

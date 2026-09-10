@@ -80,4 +80,7 @@ userSchema.pre(['deleteOne', 'findOneAndDelete'], async function (next) {
     next();
 });
 
+// Performance indexes
+userSchema.index({ role: 1, createdAt: -1 });
+
 export const User = mongoose.model('User', userSchema);
