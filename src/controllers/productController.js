@@ -13,6 +13,7 @@ export const createProduct = async (req, res) => {
       productInfo: productInfoBody = null,
       price,
       quantity,
+      inStock,
       category,
       subCategory = null,
       hasVariants = false,
@@ -51,12 +52,16 @@ export const createProduct = async (req, res) => {
     parsedProductInfo.about = parsedProductInfo.about || about || '';
     parsedProductInfo.note = parsedProductInfo.note || note || '';
 
-    if (!title || !finalDescription || price === undefined || quantity === undefined || !category) {
+    if (!title || !finalDescription || price === undefined || !category) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required product fields: title, description, price, quantity, category.',
+        message: 'Missing required product fields: title, description, price, category.',
       });
     }
+
+    const isInStock = inStock !== undefined 
+      ? (inStock === 'true' || inStock === true) 
+      : (quantity !== undefined ? Number(quantity) > 0 : true);
 
     let imageUrls = [];
     const filesList = Array.isArray(req.files) ? req.files : (req.files ? Object.values(req.files).flat() : []);
@@ -152,7 +157,8 @@ export const createProduct = async (req, res) => {
       productInfo: parsedProductInfo,
       description: finalDescription,
       price,
-      quantity,
+      quantity: isInStock ? (quantity !== undefined ? Number(quantity) : 1) : 0,
+      inStock: isInStock,
       category: category.toLowerCase(),
       subCategory: subCategory && subCategory.toLowerCase(),
       imageUrls,
@@ -210,9 +216,15 @@ export const getAllProducts = async (req, res) => {
 
     if (stockStatus && stockStatus !== 'All') {
       if (stockStatus === 'In Stock') {
-        filter.quantity = { $gt: 0 };
+        filter.$or = [
+          { inStock: true },
+          { inStock: { $exists: false }, quantity: { $gt: 0 } }
+        ];
       } else if (stockStatus === 'Out of Stock') {
-        filter.quantity = { $lte: 0 };
+        filter.$or = [
+          { inStock: false },
+          { inStock: { $exists: false }, quantity: { $lte: 0 } }
+        ];
       }
     }
 
@@ -374,6 +386,7 @@ export const updateProduct = async (req, res) => {
       productInfo: productInfoBody,
       price,
       quantity,
+      inStock,
       category,
       subCategory,
       hasVariants,
@@ -538,7 +551,15 @@ export const updateProduct = async (req, res) => {
     }
 
     product.price = price !== undefined ? Number(price) : product.price;
-    product.quantity = quantity !== undefined ? Number(quantity) : product.quantity;
+    if (inStock !== undefined) {
+      const parsedInStock = inStock === 'true' || inStock === true;
+      product.inStock = parsedInStock;
+      product.quantity = parsedInStock ? (product.quantity > 0 ? product.quantity : 1) : 0;
+    } else if (quantity !== undefined) {
+      const numQty = Number(quantity);
+      product.quantity = numQty;
+      product.inStock = numQty > 0;
+    }
     if (category) {
       product.category = category.toLowerCase();
     }

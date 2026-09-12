@@ -49,10 +49,11 @@ export const createOrder = async (req, res) => {
                 });
             }
 
-            if (product.quantity < item.productQuantity) {
+            const isProductInStock = product.inStock !== false && (product.inStock !== undefined || product.quantity > 0);
+            if (!isProductInStock) {
                 return res.status(400).json({
                     success: false,
-                    message: `Insufficient stock for product: ${product.title}. Available: ${product.quantity}`,
+                    message: `Product is currently out of stock: ${product.title}`,
                 });
             }
 
@@ -81,13 +82,6 @@ export const createOrder = async (req, res) => {
         
         const gstAmount = subtotal * (settings.gstRate / 100);
         const totalAmount = subtotal + gstAmount + settings.shippingCost;
-
-        // Deduct stock quantities from database
-        for (const item of cart.items) {
-            await Product.findByIdAndUpdate(item.productId, {
-                $inc: { quantity: -item.productQuantity }
-            });
-        }
 
         // Create Order
         const order = await Order.create({
