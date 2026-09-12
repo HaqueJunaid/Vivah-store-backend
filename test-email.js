@@ -26,7 +26,7 @@ transporter.verify((error, success) => {
         console.error('SMTP Connection Error:', error);
     } else {
         console.log('SMTP Connection Successful!');
-        
+
         // Try sending an actual email
         transporter.sendMail({
             from: process.env.EMAIL_FROM,

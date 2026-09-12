@@ -27,13 +27,7 @@ router.post(
   protect,
   admin,
   (req, res, next) => {
-    upload.fields([
-      { name: 'images', maxCount: 10 },
-      { name: 'imageUrls', maxCount: 10 },
-      { name: 'ImageUrls', maxCount: 10 },
-      { name: 'files', maxCount: 10 },
-      { name: 'variantImages', maxCount: 10 },
-    ])(req, res, (err) => {
+    upload.any()(req, res, (err) => {
       if (err) {
         return res.status(400).json({ success: false, message: err.message });
       }
@@ -48,13 +42,7 @@ router.put(
   protect,
   admin,
   (req, res, next) => {
-    upload.fields([
-      { name: 'images', maxCount: 10 },
-      { name: 'imageUrls', maxCount: 10 },
-      { name: 'ImageUrls', maxCount: 10 },
-      { name: 'files', maxCount: 10 },
-      { name: 'variantImages', maxCount: 10 },
-    ])(req, res, (err) => {
+    upload.any()(req, res, (err) => {
       if (err) {
         return res.status(400).json({ success: false, message: err.message });
       }

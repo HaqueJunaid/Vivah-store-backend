@@ -8,18 +8,50 @@ export const createProduct = async (req, res) => {
     const {
       title,
       description,
+      about = '',
+      note = '',
+      productInfo: productInfoBody = null,
       price,
       quantity,
       category,
       subCategory = null,
       hasVariants = false,
       variantTitle = null,
+      variants: variantsBody = null,
       variantImages: variantImagesBody = null,
       isCustomizable = false,
       customizations: customizationsBody = null,
     } = req.body;
 
-    if (!title || !description || price === undefined || quantity === undefined || !category) {
+    let parsedProductInfo = { description: '', about: '', note: '' };
+    if (productInfoBody) {
+      if (typeof productInfoBody === 'string') {
+        try {
+          parsedProductInfo = JSON.parse(productInfoBody);
+        } catch (e) {
+          parsedProductInfo = { description: productInfoBody, about: '', note: '' };
+        }
+      } else if (typeof productInfoBody === 'object') {
+        parsedProductInfo = { ...productInfoBody };
+      }
+    }
+
+    if (description !== undefined && !parsedProductInfo.description) {
+      parsedProductInfo.description = description;
+    }
+    if (about !== undefined && !parsedProductInfo.about) {
+      parsedProductInfo.about = about;
+    }
+    if (note !== undefined && !parsedProductInfo.note) {
+      parsedProductInfo.note = note;
+    }
+
+    const finalDescription = parsedProductInfo.description || description || '';
+    parsedProductInfo.description = finalDescription;
+    parsedProductInfo.about = parsedProductInfo.about || about || '';
+    parsedProductInfo.note = parsedProductInfo.note || note || '';
+
+    if (!title || !finalDescription || price === undefined || quantity === undefined || !category) {
       return res.status(400).json({
         success: false,
         message: 'Missing required product fields: title, description, price, quantity, category.',
@@ -27,33 +59,80 @@ export const createProduct = async (req, res) => {
     }
 
     let imageUrls = [];
-    let variantImages = [];
+    const filesList = Array.isArray(req.files) ? req.files : (req.files ? Object.values(req.files).flat() : []);
 
-    if (variantImagesBody) {
-      if (typeof variantImagesBody === 'string') {
-        variantImages = variantImagesBody
-          .split(',')
-          .map((url) => url.trim())
-          .filter((url) => url.length > 0);
-      } else if (Array.isArray(variantImagesBody)) {
-        variantImages = variantImagesBody;
+    // 1. Main images upload
+    const mainImageFiles = filesList.filter((f) =>
+      ['images', 'imageUrls', 'ImageUrls', 'files'].includes(f.fieldname)
+    );
+    if (mainImageFiles.length > 0) {
+      imageUrls = await uploadToImageKit(mainImageFiles);
+    }
+
+    // 2. Process multiple variants
+    const isHasVariants = hasVariants === 'true' || hasVariants === true;
+    let finalVariants = [];
+
+    let parsedVariants = [];
+    if (variantsBody) {
+      if (typeof variantsBody === 'string') {
+        try {
+          parsedVariants = JSON.parse(variantsBody);
+        } catch (e) {
+          parsedVariants = [];
+        }
+      } else if (Array.isArray(variantsBody)) {
+        parsedVariants = variantsBody;
       }
     }
 
-    if (req.files) {
-      if (Array.isArray(req.files)) {
-        imageUrls = await uploadToImageKit(req.files);
-      } else {
-        const mainImageFiles = req.files.images || req.files.imageUrls || req.files.ImageUrls || req.files.files;
-        if (mainImageFiles && mainImageFiles.length > 0) {
-          imageUrls = await uploadToImageKit(mainImageFiles);
+    if (isHasVariants && parsedVariants.length > 0) {
+      const hasIndexedVariantFields = filesList.some((f) => f.fieldname.startsWith('variantImages_'));
+
+      for (let i = 0; i < parsedVariants.length; i++) {
+        const v = parsedVariants[i];
+        const vTitle = (v.title || v.name || `Variant ${i + 1}`).trim();
+        let vImages = Array.isArray(v.existingImages) ? [...v.existingImages] : (Array.isArray(v.images) ? [...v.images] : []);
+
+        const vFiles = hasIndexedVariantFields
+          ? filesList.filter((f) => f.fieldname === `variantImages_${i}`)
+          : (i === 0 ? filesList.filter((f) => f.fieldname === 'variantImages') : []);
+
+        if (vFiles.length > 0) {
+          const uploaded = await uploadToImageKit(vFiles);
+          vImages = [...vImages, ...uploaded];
         }
-        if (req.files.variantImages && req.files.variantImages.length > 0) {
-          const uploadedVariantImages = await uploadToImageKit(req.files.variantImages);
-          variantImages = [...variantImages, ...uploadedVariantImages];
+
+        finalVariants.push({
+          title: vTitle,
+          name: vTitle,
+          images: Array.from(new Set(vImages.filter(Boolean))),
+        });
+      }
+    } else if (isHasVariants && (variantTitle || variantImagesBody || filesList.some((f) => f.fieldname === 'variantImages'))) {
+      let vImages = [];
+      if (variantImagesBody) {
+        if (typeof variantImagesBody === 'string') {
+          vImages = variantImagesBody.split(',').map((u) => u.trim()).filter(Boolean);
+        } else if (Array.isArray(variantImagesBody)) {
+          vImages = variantImagesBody;
         }
       }
+      const vFiles = filesList.filter((f) => f.fieldname === 'variantImages');
+      if (vFiles.length > 0) {
+        const uploaded = await uploadToImageKit(vFiles);
+        vImages = [...vImages, ...uploaded];
+      }
+      const vTitle = (variantTitle || 'Variant 1').trim();
+      finalVariants.push({
+        title: vTitle,
+        name: vTitle,
+        images: Array.from(new Set(vImages.filter(Boolean))),
+      });
     }
+
+    const legacyVariantTitle = finalVariants.length > 0 ? finalVariants[0].title : null;
+    const legacyVariantImages = finalVariants.length > 0 ? finalVariants[0].images : [];
 
     let parsedCustomizations = [];
     if (customizationsBody) {
@@ -70,15 +149,17 @@ export const createProduct = async (req, res) => {
 
     const product = await Product.create({
       title,
-      description,
+      productInfo: parsedProductInfo,
+      description: finalDescription,
       price,
       quantity,
       category: category.toLowerCase(),
       subCategory: subCategory && subCategory.toLowerCase(),
       imageUrls,
-      hasVariants: hasVariants === 'true' || hasVariants === true,
-      variantTitle,
-      variantImages,
+      hasVariants: isHasVariants,
+      variantTitle: legacyVariantTitle,
+      variantImages: legacyVariantImages,
+      variants: finalVariants,
       isCustomizable: isCustomizable === 'true' || isCustomizable === true,
       customizations: parsedCustomizations,
       adminId: req.user.id,
@@ -113,6 +194,9 @@ export const getAllProducts = async (req, res) => {
       const searchRegex = { $regex: search, $options: 'i' };
       filter.$or = [
         { title: searchRegex },
+        { 'productInfo.description': searchRegex },
+        { 'productInfo.about': searchRegex },
+        { 'productInfo.note': searchRegex },
         { description: searchRegex }
       ];
       if (mongoose.Types.ObjectId.isValid(search)) {
@@ -232,10 +316,12 @@ export const deleteProduct = async (req, res) => {
       });
     }
 
-    const allImages = [...(product.imageUrls || []), ...(product.variantImages || [])];
+    const variantImagesAll = (product.variants || []).flatMap((v) => v.images || []);
+    const allImages = [...(product.imageUrls || []), ...(product.variantImages || []), ...variantImagesAll];
+    const uniqueImages = Array.from(new Set(allImages.filter(Boolean)));
 
-    if (allImages.length > 0) {
-      await deleteFromImageKit(allImages);
+    if (uniqueImages.length > 0) {
+      await deleteFromImageKit(uniqueImages);
     }
 
     await Product.findByIdAndDelete(id);
@@ -283,12 +369,16 @@ export const updateProduct = async (req, res) => {
     const {
       title,
       description,
+      about,
+      note,
+      productInfo: productInfoBody,
       price,
       quantity,
       category,
       subCategory,
       hasVariants,
       variantTitle,
+      variants: variantsBody,
       existingImageUrls,
       variantImages: variantImagesBody,
       isCustomizable,
@@ -303,6 +393,9 @@ export const updateProduct = async (req, res) => {
       });
     }
 
+    const filesList = Array.isArray(req.files) ? req.files : (req.files ? Object.values(req.files).flat() : []);
+
+    // 1. Process Main Images
     let retainedMainUrls = [];
     if (existingImageUrls) {
       if (Array.isArray(existingImageUrls)) {
@@ -312,53 +405,138 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    const removedMainUrls = (product.imageUrls || []).filter(
-      (url) => !retainedMainUrls.includes(url)
+    const mainImageFiles = filesList.filter((f) =>
+      ['images', 'imageUrls', 'ImageUrls', 'files'].includes(f.fieldname)
     );
-
-    if (removedMainUrls.length > 0) {
-      await deleteFromImageKit(removedMainUrls);
-    }
-
     let newMainUrls = [];
-    if (req.files) {
-      const mainImageFiles = req.files.images || req.files.imageUrls || req.files.ImageUrls || req.files.files;
-      if (mainImageFiles && mainImageFiles.length > 0) {
-        newMainUrls = await uploadToImageKit(mainImageFiles);
-      }
+    if (mainImageFiles.length > 0) {
+      newMainUrls = await uploadToImageKit(mainImageFiles);
     }
-
     const updatedMainUrls = [...retainedMainUrls, ...newMainUrls];
 
-    let updatedVariantUrls = [];
-    if (variantImagesBody) {
-      if (typeof variantImagesBody === 'string') {
-        updatedVariantUrls = variantImagesBody
-          .split(',')
-          .map((url) => url.trim())
-          .filter((url) => url.length > 0);
-      } else if (Array.isArray(variantImagesBody)) {
-        updatedVariantUrls = variantImagesBody;
+    // 2. Process Variants
+    const isHasVariants = hasVariants !== undefined ? (hasVariants === 'true' || hasVariants === true) : product.hasVariants;
+    let finalVariants = [];
+
+    let parsedVariants = null;
+    if (variantsBody !== undefined) {
+      if (typeof variantsBody === 'string') {
+        try {
+          parsedVariants = JSON.parse(variantsBody);
+        } catch (e) {
+          parsedVariants = null;
+        }
+      } else if (Array.isArray(variantsBody)) {
+        parsedVariants = variantsBody;
       }
     }
 
-    const removedVariantUrls = (product.variantImages || []).filter(
-      (url) => !updatedVariantUrls.includes(url)
-    );
+    if (isHasVariants) {
+      if (parsedVariants && Array.isArray(parsedVariants) && parsedVariants.length > 0) {
+        const hasIndexedVariantFields = filesList.some((f) => f.fieldname.startsWith('variantImages_'));
 
-    if (removedVariantUrls.length > 0) {
-      await deleteFromImageKit(removedVariantUrls);
+        for (let i = 0; i < parsedVariants.length; i++) {
+          const v = parsedVariants[i];
+          const vTitle = (v.title || v.name || `Variant ${i + 1}`).trim();
+          let retainedVImages = Array.isArray(v.existingImages)
+            ? [...v.existingImages]
+            : (Array.isArray(v.images) ? v.images.filter((img) => typeof img === 'string' && !img.startsWith('blob:')) : []);
+
+          const vFiles = hasIndexedVariantFields
+            ? filesList.filter((f) => f.fieldname === `variantImages_${i}`)
+            : (i === 0 ? filesList.filter((f) => f.fieldname === 'variantImages') : []);
+
+          if (vFiles.length > 0) {
+            const uploaded = await uploadToImageKit(vFiles);
+            retainedVImages = [...retainedVImages, ...uploaded];
+          }
+
+          finalVariants.push({
+            title: vTitle,
+            name: vTitle,
+            images: Array.from(new Set(retainedVImages.filter(Boolean))),
+          });
+        }
+      } else if (variantTitle !== undefined || variantImagesBody !== undefined || filesList.some((f) => f.fieldname === 'variantImages')) {
+        let updatedLegacyVariantUrls = [];
+        if (variantImagesBody) {
+          if (typeof variantImagesBody === 'string') {
+            updatedLegacyVariantUrls = variantImagesBody.split(',').map((u) => u.trim()).filter(Boolean);
+          } else if (Array.isArray(variantImagesBody)) {
+            updatedLegacyVariantUrls = variantImagesBody;
+          }
+        }
+        const legacyVFiles = filesList.filter((f) => f.fieldname === 'variantImages');
+        let newLegacyUrls = [];
+        if (legacyVFiles.length > 0) {
+          newLegacyUrls = await uploadToImageKit(legacyVFiles);
+        }
+        const vTitle = (variantTitle || product.variantTitle || 'Variant 1').trim();
+        finalVariants.push({
+          title: vTitle,
+          name: vTitle,
+          images: Array.from(new Set([...updatedLegacyVariantUrls, ...newLegacyUrls].filter(Boolean))),
+        });
+      } else {
+        finalVariants = product.variants || [];
+      }
     }
 
-    let newVariantUrls = [];
-    if (req.files && req.files.variantImages && req.files.variantImages.length > 0) {
-      newVariantUrls = await uploadToImageKit(req.files.variantImages);
-    }
+    // Identify and delete removed images from ImageKit
+    const oldMainUrls = product.imageUrls || [];
+    const oldVariantUrls = [...(product.variantImages || []), ...(product.variants || []).flatMap((v) => v.images || [])];
+    const oldAllUrls = Array.from(new Set([...oldMainUrls, ...oldVariantUrls].filter(Boolean)));
 
-    const finalVariantUrls = [...updatedVariantUrls, ...newVariantUrls];
+    const newAllUrls = new Set([
+      ...updatedMainUrls,
+      ...finalVariants.flatMap((v) => v.images || [])
+    ]);
+
+    const urlsToDelete = oldAllUrls.filter((url) => !newAllUrls.has(url));
+    if (urlsToDelete.length > 0) {
+      await deleteFromImageKit(urlsToDelete);
+    }
 
     product.title = title !== undefined ? title : product.title;
-    product.description = description !== undefined ? description : product.description;
+
+    let updatedProductInfo = product.productInfo ? {
+      description: product.productInfo.description || product.description || '',
+      about: product.productInfo.about || '',
+      note: product.productInfo.note || '',
+    } : {
+      description: product.description || '',
+      about: '',
+      note: '',
+    };
+
+    if (productInfoBody !== undefined) {
+      if (typeof productInfoBody === 'string') {
+        try {
+          updatedProductInfo = { ...updatedProductInfo, ...JSON.parse(productInfoBody) };
+        } catch (e) {
+          updatedProductInfo.description = productInfoBody;
+        }
+      } else if (typeof productInfoBody === 'object' && productInfoBody !== null) {
+        updatedProductInfo = { ...updatedProductInfo, ...productInfoBody };
+      }
+    }
+
+    if (description !== undefined) {
+      updatedProductInfo.description = description;
+      product.description = description;
+    }
+    if (about !== undefined) {
+      updatedProductInfo.about = about;
+    }
+    if (note !== undefined) {
+      updatedProductInfo.note = note;
+    }
+
+    product.productInfo = updatedProductInfo;
+    if (updatedProductInfo.description) {
+      product.description = updatedProductInfo.description;
+    }
+
     product.price = price !== undefined ? Number(price) : product.price;
     product.quantity = quantity !== undefined ? Number(quantity) : product.quantity;
     if (category) {
@@ -369,17 +547,10 @@ export const updateProduct = async (req, res) => {
     }
     product.imageUrls = updatedMainUrls;
 
-    product.hasVariants = hasVariants !== undefined ? (hasVariants === 'true' || hasVariants === true) : product.hasVariants;
-    if (product.hasVariants) {
-      product.variantTitle = variantTitle !== undefined ? variantTitle : product.variantTitle;
-      product.variantImages = finalVariantUrls;
-    } else {
-      product.variantTitle = null;
-      if (product.variantImages && product.variantImages.length > 0) {
-        await deleteFromImageKit(product.variantImages);
-      }
-      product.variantImages = [];
-    }
+    product.hasVariants = isHasVariants;
+    product.variants = finalVariants;
+    product.variantTitle = finalVariants.length > 0 ? finalVariants[0].title : null;
+    product.variantImages = finalVariants.length > 0 ? finalVariants[0].images : [];
 
     if (isCustomizable !== undefined) {
       product.isCustomizable = isCustomizable === 'true' || isCustomizable === true;

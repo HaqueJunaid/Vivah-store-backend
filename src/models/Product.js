@@ -6,9 +6,26 @@ const productSchema = new mongoose.Schema({
         required: true,
         trim: true,
     },
+    productInfo: {
+        description: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        about: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        note: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+    },
     description: {
         type: String,
-        required: true,
+        default: '',
     },
     price: {
         type: Number,
@@ -55,6 +72,21 @@ const productSchema = new mongoose.Schema({
     variantImages: [{
         type: String,
     }],
+    variants: [{
+        title: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        name: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        images: [{
+            type: String,
+        }],
+    }],
     isCustomizable: {
         type: Boolean,
         default: false,
@@ -81,6 +113,12 @@ const productSchema = new mongoose.Schema({
 productSchema.index({ category: 1, createdAt: -1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ price: 1 });
-productSchema.index({ title: 'text', description: 'text' });
+productSchema.index({ 
+    title: 'text', 
+    'productInfo.description': 'text', 
+    'productInfo.about': 'text', 
+    'productInfo.note': 'text',
+    description: 'text' 
+});
 
 export const Product = mongoose.model('Product', productSchema);
