@@ -14,6 +14,7 @@ import contactRoutes from './routes/contactRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import settingRoutes from './routes/settingRoutes.js';
+import categoryRoutes from './routes/categoryRoutes.js';
 import aj from './config/arcjet.js';
 import { isSpoofedBot } from '@arcjet/inspect';
 
@@ -112,6 +113,9 @@ app.use('/api/admin', adminRoutes);
 
 // Public Settings routes
 app.use('/api/settings', settingRoutes);
+
+// Category & Navigation routes
+app.use('/api/categories', categoryRoutes);
 
 app.listen(config.port, () => {
   console.log(`Server is running on port ${config.port}`);

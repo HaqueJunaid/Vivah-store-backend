@@ -45,16 +45,7 @@ const productSchema = new mongoose.Schema({
     category: {
         type: String,
         required: true,
-        enum: [
-            'assets',
-            'boards & signage',
-            'room stationery',
-            'utility stationery',
-            'fun & entertainment',
-            'thermatic elements',
-            'favour & gifts',
-            'invites & planner'
-        ],
+        trim: true,
         lowercase: true,
     },
     subCategory: {
