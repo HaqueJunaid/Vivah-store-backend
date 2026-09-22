@@ -254,7 +254,7 @@ const emailTemplates = {
                 
                 <div class="footer">
                     <p><strong>Vivah Store Stationery &amp; Graphic Studio</strong></p>
-                    <p>Surat, Gujarat, India</p>
+                    <p>Sonari, Jamshedpur, Jharkhand</p>
                     <p>This is an automated security notice. Please do not reply directly.</p>
                 </div>
             </div>
@@ -373,14 +373,14 @@ const emailTemplates = {
                 
                 <div class="footer">
                     <p><strong>Vivah Store Stationery &amp; Graphic Studio</strong></p>
-                    <p>Surat, Gujarat, India</p>
+                    <p>Sonari, Jamshedpur, Jharkhand</p>
                     <p>Thank you for choosing luxury. Enjoy your journey with us!</p>
                 </div>
             </div>
         </body>
         </html>
     `,
-    
+
     passwordResetEmail: (name, resetUrl) => `
         <!DOCTYPE html>
         <html lang="en">
