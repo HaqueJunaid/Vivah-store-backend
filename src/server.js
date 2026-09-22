@@ -19,6 +19,7 @@ import aj from './config/arcjet.js';
 import { isSpoofedBot } from '@arcjet/inspect';
 
 const app = express();
+app.set('trust proxy', 1);
 connectDB();
 
 app.use(

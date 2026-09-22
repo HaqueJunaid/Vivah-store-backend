@@ -38,8 +38,4 @@ const categorySchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Case-insensitive title and url indices
-categorySchema.index({ url: 1 });
-categorySchema.index({ title: 1 });
-
 export const Category = mongoose.model('Category', categorySchema);
