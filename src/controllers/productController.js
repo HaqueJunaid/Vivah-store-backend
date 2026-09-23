@@ -23,6 +23,8 @@ export const createProduct = async (req, res) => {
       isCustomizable = false,
       customizations: customizationsBody = null,
       hasFixedQuantities = false,
+      hasDimensions = false,
+      dimensions: dimensionsBody = null,
     } = req.body;
 
     let parsedProductInfo = { description: '', about: '', note: '' };
@@ -153,6 +155,21 @@ export const createProduct = async (req, res) => {
       }
     }
 
+    let parsedDimensions = [];
+    if (dimensionsBody) {
+      if (typeof dimensionsBody === 'string') {
+        try {
+          parsedDimensions = JSON.parse(dimensionsBody);
+        } catch (e) {
+          parsedDimensions = [];
+        }
+      } else if (Array.isArray(dimensionsBody)) {
+        parsedDimensions = dimensionsBody;
+      }
+    }
+
+    const isHasDimensions = hasDimensions === 'true' || hasDimensions === true || parsedDimensions.length > 0;
+
     const product = await Product.create({
       title,
       productInfo: parsedProductInfo,
@@ -170,6 +187,8 @@ export const createProduct = async (req, res) => {
       isCustomizable: isCustomizable === 'true' || isCustomizable === true,
       customizations: parsedCustomizations,
       hasFixedQuantities: hasFixedQuantities === 'true' || hasFixedQuantities === true,
+      hasDimensions: isHasDimensions,
+      dimensions: parsedDimensions,
       adminId: req.user.id,
     });
 
@@ -399,6 +418,8 @@ export const updateProduct = async (req, res) => {
       isCustomizable,
       customizations: customizationsBody,
       hasFixedQuantities,
+      hasDimensions,
+      dimensions: dimensionsBody,
     } = req.body;
 
     const product = await Product.findById(id);
@@ -581,6 +602,25 @@ export const updateProduct = async (req, res) => {
     }
     if (hasFixedQuantities !== undefined) {
       product.hasFixedQuantities = hasFixedQuantities === 'true' || hasFixedQuantities === true;
+    }
+    if (hasDimensions !== undefined) {
+      product.hasDimensions = hasDimensions === 'true' || hasDimensions === true;
+    }
+    if (dimensionsBody !== undefined) {
+      let parsedDimensions = [];
+      if (typeof dimensionsBody === 'string') {
+        try {
+          parsedDimensions = JSON.parse(dimensionsBody);
+        } catch (e) {
+          parsedDimensions = [];
+        }
+      } else if (Array.isArray(dimensionsBody)) {
+        parsedDimensions = dimensionsBody;
+      }
+      product.dimensions = parsedDimensions;
+      if (hasDimensions === undefined) {
+        product.hasDimensions = parsedDimensions.length > 0;
+      }
     }
     if (customizationsBody !== undefined) {
       let parsedCustomizations = [];

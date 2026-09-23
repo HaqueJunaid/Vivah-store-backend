@@ -93,6 +93,37 @@ const productSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    hasDimensions: {
+        type: Boolean,
+        default: false,
+    },
+    dimensions: [{
+        label: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        width: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        height: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        thickness: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        unit: {
+            type: String,
+            default: 'in',
+            trim: true,
+        },
+    }],
     adminId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
