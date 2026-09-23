@@ -58,7 +58,7 @@ export const createOrder = async (req, res) => {
             }
 
             const variantImage = (item.selectedVariant && typeof item.selectedVariant === 'object' && item.selectedVariant.images?.[0]) || '';
-            const prodImage = variantImage || item.productImage || (product.imageUrls && product.imageUrls[0]) || '';
+            const prodImage = item.productImage || variantImage || (product.imageUrls && product.imageUrls[0]) || '';
 
             orderItems.push({
                 product: product._id,
