@@ -89,6 +89,10 @@ const productSchema = new mongoose.Schema({
     customizations: [{
         type: String,
     }],
+    hasFixedQuantities: {
+        type: Boolean,
+        default: false,
+    },
     adminId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',

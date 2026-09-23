@@ -22,6 +22,7 @@ export const createProduct = async (req, res) => {
       variantImages: variantImagesBody = null,
       isCustomizable = false,
       customizations: customizationsBody = null,
+      hasFixedQuantities = false,
     } = req.body;
 
     let parsedProductInfo = { description: '', about: '', note: '' };
@@ -168,6 +169,7 @@ export const createProduct = async (req, res) => {
       variants: finalVariants,
       isCustomizable: isCustomizable === 'true' || isCustomizable === true,
       customizations: parsedCustomizations,
+      hasFixedQuantities: hasFixedQuantities === 'true' || hasFixedQuantities === true,
       adminId: req.user.id,
     });
 
@@ -396,6 +398,7 @@ export const updateProduct = async (req, res) => {
       variantImages: variantImagesBody,
       isCustomizable,
       customizations: customizationsBody,
+      hasFixedQuantities,
     } = req.body;
 
     const product = await Product.findById(id);
@@ -575,6 +578,9 @@ export const updateProduct = async (req, res) => {
 
     if (isCustomizable !== undefined) {
       product.isCustomizable = isCustomizable === 'true' || isCustomizable === true;
+    }
+    if (hasFixedQuantities !== undefined) {
+      product.hasFixedQuantities = hasFixedQuantities === 'true' || hasFixedQuantities === true;
     }
     if (customizationsBody !== undefined) {
       let parsedCustomizations = [];
