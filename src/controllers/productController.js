@@ -23,6 +23,7 @@ export const createProduct = async (req, res) => {
       isCustomizable = false,
       customizations: customizationsBody = null,
       hasFixedQuantities = false,
+      batchQuantities: batchQuantitiesBody = null,
       hasDimensions = false,
       dimensions: dimensionsBody = null,
     } = req.body;
@@ -170,6 +171,19 @@ export const createProduct = async (req, res) => {
 
     const isHasDimensions = hasDimensions === 'true' || hasDimensions === true || parsedDimensions.length > 0;
 
+    let parsedBatchQuantities = [];
+    if (batchQuantitiesBody) {
+      if (typeof batchQuantitiesBody === 'string') {
+        try {
+          parsedBatchQuantities = JSON.parse(batchQuantitiesBody);
+        } catch (e) {
+          parsedBatchQuantities = batchQuantitiesBody.split(',').map(Number).filter((n) => !isNaN(n) && n > 0);
+        }
+      } else if (Array.isArray(batchQuantitiesBody)) {
+        parsedBatchQuantities = batchQuantitiesBody.map(Number).filter((n) => !isNaN(n) && n > 0);
+      }
+    }
+
     const product = await Product.create({
       title,
       productInfo: parsedProductInfo,
@@ -187,6 +201,7 @@ export const createProduct = async (req, res) => {
       isCustomizable: isCustomizable === 'true' || isCustomizable === true,
       customizations: parsedCustomizations,
       hasFixedQuantities: hasFixedQuantities === 'true' || hasFixedQuantities === true,
+      batchQuantities: parsedBatchQuantities,
       hasDimensions: isHasDimensions,
       dimensions: parsedDimensions,
       adminId: req.user.id,
@@ -418,6 +433,7 @@ export const updateProduct = async (req, res) => {
       isCustomizable,
       customizations: customizationsBody,
       hasFixedQuantities,
+      batchQuantities: batchQuantitiesBody,
       hasDimensions,
       dimensions: dimensionsBody,
     } = req.body;
@@ -602,6 +618,19 @@ export const updateProduct = async (req, res) => {
     }
     if (hasFixedQuantities !== undefined) {
       product.hasFixedQuantities = hasFixedQuantities === 'true' || hasFixedQuantities === true;
+    }
+    if (batchQuantitiesBody !== undefined) {
+      let parsedBatchQuantities = [];
+      if (typeof batchQuantitiesBody === 'string') {
+        try {
+          parsedBatchQuantities = JSON.parse(batchQuantitiesBody);
+        } catch (e) {
+          parsedBatchQuantities = batchQuantitiesBody.split(',').map(Number).filter((n) => !isNaN(n) && n > 0);
+        }
+      } else if (Array.isArray(batchQuantitiesBody)) {
+        parsedBatchQuantities = batchQuantitiesBody.map(Number).filter((n) => !isNaN(n) && n > 0);
+      }
+      product.batchQuantities = parsedBatchQuantities;
     }
     if (hasDimensions !== undefined) {
       product.hasDimensions = hasDimensions === 'true' || hasDimensions === true;

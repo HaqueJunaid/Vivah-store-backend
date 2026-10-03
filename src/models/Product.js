@@ -93,6 +93,9 @@ const productSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    batchQuantities: [{
+        type: Number,
+    }],
     hasDimensions: {
         type: Boolean,
         default: false,
