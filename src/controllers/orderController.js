@@ -5,6 +5,11 @@ import { Product } from '../models/Product.js';
 import mongoose from 'mongoose';
 import { deleteFromImageKit } from '../middlewares/upload.js';
 import { Setting } from '../models/Setting.js';
+import {
+    createCashfreeOrderSession,
+    fetchCashfreeOrderPayments,
+} from '../config/cashfree.js';
+import { config } from '../config/config.js';
 
 export const createOrder = async (req, res) => {
     try {
@@ -84,6 +89,9 @@ export const createOrder = async (req, res) => {
         const totalAmount = subtotal + gstAmount + settings.shippingCost;
 
         // Create Order
+        const isCashfree = paymentMethod === 'cashfree';
+        const isCod = paymentMethod === 'cod';
+
         const order = await Order.create({
             user: userId,
             items: orderItems,
@@ -103,18 +111,75 @@ export const createOrder = async (req, res) => {
             shippingCost: settings.shippingCost,
             totalAmount,
             paymentMethod,
-            paymentStatus: paymentMethod === 'cod' ? 'Pending' : 'Completed',
+            paymentStatus: (isCod || isCashfree) ? 'Pending' : 'Completed',
             status: 'Pending',
         });
 
-        // Clear user cart
-        cart.items = [];
-        await cart.save();
+        let paymentSessionId = null;
+        const cfOrderId = `order_${order._id.toString()}`;
+
+        if (isCashfree) {
+            order.cashfreeOrderId = cfOrderId;
+
+            if (config.cashfree.appId && config.cashfree.secretKey) {
+                try {
+                    const clientOrigin = config.client_origin
+                        ? config.client_origin.split(',')[0].trim().replace(/\/$/, '')
+                        : 'http://localhost:5173';
+
+                    const customerPhone = (address.phone || req.user.phone || '9999999999').replace(/[^0-9]/g, '').slice(-10) || '9999999999';
+                    const customerName = `${address.firstName || ''} ${address.lastName || ''}`.trim() || req.user.name || 'Customer';
+                    const customerEmail = req.user.email || 'customer@vivahstore.com';
+
+                    const createOrderRequest = {
+                        order_amount: totalAmount,
+                        order_currency: 'INR',
+                        order_id: cfOrderId,
+                        customer_details: {
+                            customer_id: userId.toString(),
+                            customer_name: customerName,
+                            customer_email: customerEmail,
+                            customer_phone: customerPhone,
+                        },
+                        order_meta: {
+                            return_url: `${clientOrigin}/orders/${order._id}?order_id={order_id}`,
+                            notify_url: `${req.protocol}://${req.get('host')}/api/payment/webhook`,
+                        },
+                        order_note: `VivahStore Order #${order._id}`,
+                    };
+
+                    const response = await createCashfreeOrderSession(createOrderRequest);
+                    if (response?.data?.payment_session_id) {
+                        paymentSessionId = response.data.payment_session_id;
+                        order.cashfreePaymentSessionId = paymentSessionId;
+                    }
+                } catch (cfErr) {
+                    console.error('[Cashfree createOrder error]:', cfErr?.response?.data || cfErr.message);
+                    // Rollback order so no phantom order remains in MongoDB
+                    await Order.findByIdAndDelete(order._id);
+                    return res.status(502).json({
+                        success: false,
+                        message: cfErr?.response?.data?.message || 'Failed to initiate Cashfree payment session. Please verify Cashfree credentials.',
+                    });
+                }
+            } else {
+                paymentSessionId = `mock_session_${Date.now()}`;
+                order.cashfreePaymentSessionId = paymentSessionId;
+            }
+
+            await order.save();
+        } else {
+            // For COD or mock, clear cart immediately
+            cart.items = [];
+            await cart.save();
+        }
 
         res.status(201).json({
             success: true,
             message: 'Order placed successfully.',
             order,
+            paymentSessionId,
+            cashfreeOrderId: cfOrderId,
         });
     } catch (error) {
         console.error('Create order error:', error);
@@ -157,7 +222,7 @@ export const getOrderById = async (req, res) => {
             });
         }
 
-        const order = await Order.findById(id).populate('items.product', 'imageUrls title').lean();
+        let order = await Order.findById(id).populate('items.product', 'imageUrls title');
         if (!order) {
             return res.status(404).json({
                 success: false,
@@ -172,6 +237,47 @@ export const getOrderById = async (req, res) => {
                 success: false,
                 message: 'Not authorized to view this order.',
             });
+        }
+
+        // Auto-reconciliation: If order is still pending for Cashfree payment, check with Cashfree API
+        // This solves "payment successful by user but pending in DB due to internet/redirect issue"
+        if (
+            order.paymentMethod === 'cashfree' &&
+            order.paymentStatus === 'Pending' &&
+            order.cashfreeOrderId &&
+            config.cashfree.appId &&
+            config.cashfree.secretKey
+        ) {
+            try {
+                const response = await fetchCashfreeOrderPayments(order.cashfreeOrderId);
+                const payments = response?.data || [];
+                const successfulPayment = Array.isArray(payments)
+                    ? payments.find((p) => (p.payment_status || '').toUpperCase() === 'SUCCESS')
+                    : null;
+
+                if (successfulPayment) {
+                    order.paymentStatus = 'Completed';
+                    if (order.status === 'Pending') {
+                        order.status = 'Processing';
+                    }
+                    order.paymentDetails = {
+                        cfPaymentId: successfulPayment.cf_payment_id,
+                        paymentMethod: successfulPayment.payment_group || 'cashfree',
+                        paymentTime: successfulPayment.payment_time ? new Date(successfulPayment.payment_time) : new Date(),
+                        bankReference: successfulPayment.bank_reference || null,
+                        paymentAmount: successfulPayment.payment_amount,
+                        paymentMessage: successfulPayment.payment_message || 'Payment auto-reconciled on order lookup',
+                        verifiedAt: new Date(),
+                    };
+                    await order.save();
+                    console.log(`[Order Auto-Reconciled] Order ${order._id} was marked Completed via getOrderById`);
+
+                    // Clear cart
+                    await Cart.findOneAndUpdate({ userId: order.user }, { $set: { items: [] } });
+                }
+            } catch (reconErr) {
+                console.error('[Order Reconciliation Error]:', reconErr?.response?.data || reconErr.message);
+            }
         }
 
         res.status(200).json({

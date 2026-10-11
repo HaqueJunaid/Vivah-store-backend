@@ -31,5 +31,11 @@ export const config = {
         publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
         privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
         urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+    },
+    cashfree: {
+        appId: process.env.CASHFREE_APP_ID || '',
+        secretKey: process.env.CASHFREE_SECRET_KEY || '',
+        env: process.env.CASHFREE_ENV || 'SANDBOX',
+        apiVersion: process.env.CASHFREE_API_VERSION || '2023-08-01',
     }
 };

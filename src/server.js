@@ -15,6 +15,7 @@ import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import settingRoutes from './routes/settingRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
 import aj from './config/arcjet.js';
 import { isSpoofedBot } from '@arcjet/inspect';
 
@@ -56,12 +57,29 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: '50mb' }));
+app.use(
+  express.json({
+    limit: '50mb',
+    verify: (req, res, buf) => {
+      // Preserve raw body buffer string for Cashfree webhook signature verification
+      req.rawBody = buf.toString('utf8');
+    },
+  })
+);
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // Global Arcjet protection middleware for every route
 app.use(async (req, res, next) => {
+  // Always bypass Arcjet for Cashfree Webhooks so server-to-server callbacks are never blocked by bot/hosting checks
+  if (
+    req.path.startsWith('/api/payment/webhook') ||
+    req.path.startsWith('/api/payment/cashfree-webhook') ||
+    req.path.startsWith('/api/orders/cashfree-webhook')
+  ) {
+    return next();
+  }
+
   try {
     const decision = await aj.protect(req, { requested: 1 });
 
@@ -108,6 +126,9 @@ app.use('/api/contact', contactRoutes);
 
 // Order routes
 app.use('/api/orders', orderRoutes);
+
+// Payment & Cashfree routes
+app.use('/api/payment', paymentRoutes);
 
 // Admin routes
 app.use('/api/admin', adminRoutes);

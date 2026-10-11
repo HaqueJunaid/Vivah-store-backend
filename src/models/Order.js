@@ -73,19 +73,33 @@ const orderSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['cod', 'card', 'upi', 'mock'],
-        default: 'mock',
+        enum: ['cashfree', 'cod', 'card', 'upi', 'mock'],
+        default: 'cashfree',
     },
     paymentStatus: {
         type: String,
-        enum: ['Pending', 'Completed', 'Failed'],
+        enum: ['Pending', 'Completed', 'Failed', 'Cancelled'],
         default: 'Pending',
+        index: true,
     },
     status: {
         type: String,
         enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
         default: 'Pending',
         index: true,
+    },
+    cashfreeOrderId: {
+        type: String,
+        index: true,
+        default: null,
+    },
+    cashfreePaymentSessionId: {
+        type: String,
+        default: null,
+    },
+    paymentDetails: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
     },
 }, {
     timestamps: true,
