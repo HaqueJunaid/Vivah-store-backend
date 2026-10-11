@@ -236,9 +236,16 @@ export const googleAuth = async (req, res) => {
             });
         }
 
+        const allowedAudiences = Array.from(new Set([
+            config.google.clientId,
+            process.env.GOOGLE_CLIENT_ID,
+            '620343419400-9gsoj4q811skd22tqf5hbpaobgmgp7mg.apps.googleusercontent.com',
+            '238844465010-kpsal3gevsjl3ape555s508bhsvld6sj.apps.googleusercontent.com',
+        ].filter(Boolean)));
+
         const ticket = await googleClient.verifyIdToken({
             idToken: token,
-            audience: config.google.clientId,
+            audience: allowedAudiences.length === 1 ? allowedAudiences[0] : allowedAudiences,
         });
 
         const payload = ticket.getPayload();

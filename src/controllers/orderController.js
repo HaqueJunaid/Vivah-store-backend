@@ -23,6 +23,13 @@ export const createOrder = async (req, res) => {
             });
         }
 
+        if (paymentMethod === 'cod') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cash on delivery is not available. Please complete payment online.',
+            });
+        }
+
         // Fetch user's cart
         const cart = await Cart.findOne({ userId });
         if (!cart || cart.items.length === 0) {
