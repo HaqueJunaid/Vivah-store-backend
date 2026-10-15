@@ -21,6 +21,9 @@ const cartItemSchema = new mongoose.Schema({
         type: Number,
         required: true,
         default: 1,
+        min: 1,
+        max: 10000,
+        validate: Number.isSafeInteger,
     },
     selectedVariant: {
         type: mongoose.Schema.Types.Mixed,

@@ -7,6 +7,11 @@ export const upload = multer({
   storage: storage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
+    files: 12,
+    fields: 30,
+    parts: 42,
+    fieldNameSize: 100,
+    fieldSize: 100 * 1024,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];

@@ -41,6 +41,13 @@ export const fetchCashfreeOrderStatus = async (orderId) => {
     return await cashfreeClient.PGFetchOrder(orderId);
 };
 
+export const isCashfreePaymentMatchingOrder = (payment, totalAmount) => {
+    const paymentAmount = Number(payment?.payment_amount);
+    return Number.isFinite(paymentAmount) &&
+        Math.round(paymentAmount * 100) === Math.round(totalAmount * 100) &&
+        payment?.payment_currency === 'INR';
+};
+
 /**
  * Verify Cashfree Webhook Signature
  * Cashfree computes HMAC SHA256 of: timestamp + rawBody using the secret key.
@@ -55,9 +62,6 @@ export const verifyCashfreeWebhookSignature = (signature, rawBody, timestamp) =>
         const secretKey = config.cashfree.secretKey;
         if (!secretKey) {
             console.warn('[Cashfree Webhook] CASHFREE_SECRET_KEY is not configured in backend .env.');
-            if (config.env === 'development') {
-                return true;
-            }
             return false;
         }
 

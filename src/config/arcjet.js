@@ -7,18 +7,18 @@ if (config.arcjet.key) {
   aj = arcjet({
     key: config.arcjet.key,
     rules: [
-      shield({ mode: "DRY_RUN" }),
+      shield({ mode: "LIVE" }),
       detectBot({
-        mode: "DRY_RUN",
+        mode: "LIVE",
         allow: [
           "CATEGORY:SEARCH_ENGINE",
         ],
       }),
       tokenBucket({
-        mode: "DRY_RUN",
-        refillRate: 5,
-        interval: 10,
-        capacity: 10,
+        mode: "LIVE",
+        refillRate: 60,
+        interval: 60,
+        capacity: 120,
       }),
     ],
   });

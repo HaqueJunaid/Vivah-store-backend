@@ -7,6 +7,7 @@ import { Setting } from '../models/Setting.js';
 import {
     createCashfreeOrderSession,
     fetchCashfreeOrderPayments,
+    isCashfreePaymentMatchingOrder,
     verifyCashfreeWebhookSignature,
 } from '../config/cashfree.js';
 import { config } from '../config/config.js';
@@ -18,6 +19,13 @@ export const createCashfreeOrder = async (req, res) => {
     try {
         const userId = req.user.id;
         const { addressId } = req.body;
+
+        if (!config.cashfree.appId || !config.cashfree.secretKey) {
+            return res.status(503).json({
+                success: false,
+                message: 'Online payments are temporarily unavailable.',
+            });
+        }
 
         if (!addressId) {
             return res.status(400).json({
@@ -47,9 +55,18 @@ export const createCashfreeOrder = async (req, res) => {
         // Validate products and inventory
         const orderItems = [];
         let subtotal = 0;
+        const products = await Product.find({ _id: { $in: cart.items.map((item) => item.productId) } }).lean();
+        const productsById = new Map(products.map((product) => [product._id.toString(), product]));
 
         for (const item of cart.items) {
-            const product = await Product.findById(item.productId);
+            if (!Number.isSafeInteger(item.productQuantity) || item.productQuantity < 1 || item.productQuantity > 10000) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Cart contains an invalid product quantity.',
+                });
+            }
+
+            const product = productsById.get(item.productId.toString());
             if (!product) {
                 return res.status(400).json({
                     success: false,
@@ -123,8 +140,7 @@ export const createCashfreeOrder = async (req, res) => {
 
         let paymentSessionId = null;
 
-        // If Cashfree App ID and Secret Key are configured, create order via Cashfree SDK
-        if (config.cashfree.appId && config.cashfree.secretKey) {
+        {
             try {
                 const clientOrigin = config.client_origin
                     ? config.client_origin.split(',')[0].trim().replace(/\/$/, '')
@@ -142,7 +158,7 @@ export const createCashfreeOrder = async (req, res) => {
                     },
                     order_meta: {
                         return_url: `${clientOrigin}/orders/${order._id}?order_id={order_id}`,
-                        notify_url: `${req.protocol}://${req.get('host')}/api/payment/webhook`,
+                        notify_url: `${(config.api_origin || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '')}/api/payment/webhook`,
                     },
                     order_note: `VivahStore Order #${order._id}`,
                 };
@@ -178,13 +194,6 @@ export const createCashfreeOrder = async (req, res) => {
                     error: cfError?.response?.data || cfError.message,
                 });
             }
-        } else {
-            // Development fallback when credentials are not configured yet
-            console.warn('[Cashfree] CASHFREE_APP_ID or CASHFREE_SECRET_KEY is missing in backend .env.');
-            paymentSessionId = `mock_session_${Date.now()}`;
-            order.cashfreeOrderId = cfOrderId;
-            order.cashfreePaymentSessionId = paymentSessionId;
-            await order.save();
         }
 
         res.status(201).json({
@@ -283,6 +292,19 @@ export const handleCashfreeWebhook = async (req, res) => {
             paymentStatus === 'USER_DROPPED';
 
         if (isSuccess) {
+            const paymentForValidation = {
+                ...payment,
+                payment_amount: payment.payment_amount ?? eventData.order?.order_amount,
+                payment_currency: payment.payment_currency ?? eventData.order?.order_currency,
+            };
+            if (!isCashfreePaymentMatchingOrder(paymentForValidation, order.totalAmount)) {
+                console.error(`[Cashfree Webhook] Payment amount or currency mismatch for order ${order._id}.`);
+                return res.status(400).json({
+                    success: false,
+                    message: 'Payment amount or currency does not match the order.',
+                });
+            }
+
             // Idempotent check: if already completed, don't perform duplicate actions
             if (order.paymentStatus === 'Completed') {
                 console.log(`[Cashfree Webhook] Order ${order._id} was already marked as Completed. No duplicate update needed.`);
@@ -419,7 +441,10 @@ export const verifyCashfreePayment = async (req, res) => {
 
                 // Check if any payment was SUCCESS
                 const successfulPayment = Array.isArray(payments)
-                    ? payments.find((p) => (p.payment_status || '').toUpperCase() === 'SUCCESS')
+                    ? payments.find((payment) =>
+                        (payment.payment_status || '').toUpperCase() === 'SUCCESS' &&
+                        isCashfreePaymentMatchingOrder(payment, order.totalAmount)
+                    )
                     : null;
 
                 if (successfulPayment) {
@@ -475,24 +500,6 @@ export const verifyCashfreePayment = async (req, res) => {
             } catch (cfApiError) {
                 console.error('[Verify Payment Cashfree API Error]:', cfApiError?.response?.data || cfApiError.message);
             }
-        } else if (order.cashfreePaymentSessionId?.startsWith('mock_session_')) {
-            // In dev mock mode, complete the order
-            order.paymentStatus = 'Completed';
-            order.status = 'Processing';
-            order.paymentDetails = {
-                paymentMethod: 'mock_cashfree',
-                verifiedAt: new Date(),
-            };
-            await order.save();
-            await Cart.findOneAndUpdate({ userId: order.user }, { $set: { items: [] } });
-
-            return res.status(200).json({
-                success: true,
-                paymentStatus: 'Completed',
-                orderStatus: order.status,
-                order,
-                message: 'Mock payment verified successfully.',
-            });
         }
 
         return res.status(200).json({

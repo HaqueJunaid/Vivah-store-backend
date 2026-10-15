@@ -1,4 +1,5 @@
 import { Cart } from '../models/Cart.js';
+import mongoose from 'mongoose';
 
 export const getCart = async (req, res) => {
     try {
@@ -32,6 +33,19 @@ export const syncCart = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'Items must be an array.',
+            });
+        }
+
+        if (items.length > 100 || items.some((item) =>
+            !item ||
+            !mongoose.Types.ObjectId.isValid(item.productId) ||
+            !Number.isSafeInteger(item.productQuantity) ||
+            item.productQuantity < 1 ||
+            item.productQuantity > 10000
+        )) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cart contains invalid products or quantities.',
             });
         }
 

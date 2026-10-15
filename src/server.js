@@ -1,10 +1,11 @@
-import dns from 'node:dns';
-dns.setServers(["8.8.8.8", "8.8.4.4"]);
-
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import { config } from './config/config.js';
+import helmet from 'helmet';
+import compression from 'compression';
+import { rateLimit } from 'express-rate-limit';
+import mongoose from 'mongoose';
+import { config, validateProductionConfig } from './config/config.js';
 import { connectDB } from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import productRoutes from './routes/productRoutes.js';
@@ -20,8 +21,38 @@ import aj from './config/arcjet.js';
 import { isSpoofedBot } from '@arcjet/inspect';
 
 const app = express();
-app.set('trust proxy', 1);
-connectDB();
+validateProductionConfig();
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+
+app.use(helmet());
+app.use(compression());
+app.get('/health', (req, res) => {
+  const databaseConnected = mongoose.connection.readyState === 1;
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? 'ok' : 'unavailable',
+    database: databaseConnected ? 'connected' : 'disconnected',
+  });
+});
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skip: (req) => req.originalUrl.includes('/api/payment/webhook') || req.originalUrl.includes('/api/orders/cashfree-webhook'),
+}));
+app.use('/api/auth', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+}));
+
+const isAllowedOrigin = (origin) => {
+  const cleanOrigin = origin.trim().toLowerCase().replace(/\/$/, '');
+  if (config.env === 'development' && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(cleanOrigin)) return true;
+  const allowedOrigins = (config.client_origin || '').split(',').map((value) => value.trim().toLowerCase().replace(/\/$/, ''));
+  return allowedOrigins.includes(cleanOrigin);
+};
 
 app.use(
   cors({
@@ -29,27 +60,8 @@ app.use(
       // Allow requests with no origin (like mobile apps, curl, etc.)
       if (!origin) return callback(null, true);
 
-      // In development, allow any localhost origin
-      const isLocalhost = config.env === 'development' && 
-        (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'));
-
-      if (isLocalhost) {
-        return callback(null, true);
-      }
-
-      if (config.client_origin) {
-        const allowedOrigins = config.client_origin.split(',').map(o => o.trim().toLowerCase().replace(/\/$/, ''));
-        const cleanOrigin = origin.trim().toLowerCase().replace(/\/$/, '');
-        
-        if (allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes('*')) {
-          return callback(null, true);
-        }
-        
-        console.warn(`CORS blocked: origin '${origin}' is not in allowed origins [${allowedOrigins.join(', ')}]`);
-      } else {
-        // Fallback: if no client origin is configured, reflect the requesting origin
-        return callback(null, true);
-      }
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      console.warn(`CORS blocked: origin '${origin}' is not in the allowlist`);
 
       return callback(null, false);
     },
@@ -57,16 +69,26 @@ app.use(
     credentials: true,
   })
 );
+app.use((req, res, next) => {
+  const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+  const isWebhook = req.path.includes('/webhook');
+  const origin = req.get('origin');
+
+  if (unsafeMethod && !isWebhook && origin && !isAllowedOrigin(origin)) {
+    return res.status(403).json({ success: false, message: 'Untrusted request origin.' });
+  }
+  next();
+});
 app.use(
   express.json({
-    limit: '50mb',
+    limit: '1mb',
     verify: (req, res, buf) => {
       // Preserve raw body buffer string for Cashfree webhook signature verification
       req.rawBody = buf.toString('utf8');
     },
   })
 );
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.urlencoded({ limit: '100kb', extended: false }));
 app.use(cookieParser());
 
 // Global Arcjet protection middleware for every route
@@ -139,6 +161,14 @@ app.use('/api/settings', settingRoutes);
 // Category & Navigation routes
 app.use('/api/categories', categoryRoutes);
 
-app.listen(config.port, () => {
-  console.log(`Server is running on port ${config.port}`);
+const startServer = async () => {
+  await connectDB();
+  app.listen(config.port, () => {
+    console.log(`Server is running on port ${config.port}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });

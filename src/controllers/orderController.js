@@ -8,13 +8,14 @@ import { Setting } from '../models/Setting.js';
 import {
     createCashfreeOrderSession,
     fetchCashfreeOrderPayments,
+    isCashfreePaymentMatchingOrder,
 } from '../config/cashfree.js';
 import { config } from '../config/config.js';
 
 export const createOrder = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { addressId, paymentMethod = 'mock' } = req.body;
+        const { addressId, paymentMethod = 'cashfree' } = req.body;
 
         if (!addressId) {
             return res.status(400).json({
@@ -23,10 +24,17 @@ export const createOrder = async (req, res) => {
             });
         }
 
-        if (paymentMethod === 'cod') {
+        if (paymentMethod !== 'cashfree') {
             return res.status(400).json({
                 success: false,
-                message: 'Cash on delivery is not available. Please complete payment online.',
+                message: 'Only Cashfree payments are supported.',
+            });
+        }
+
+        if (!config.cashfree.appId || !config.cashfree.secretKey) {
+            return res.status(503).json({
+                success: false,
+                message: 'Online payments are temporarily unavailable.',
             });
         }
 
@@ -51,9 +59,18 @@ export const createOrder = async (req, res) => {
         // Validate products and check stock
         const orderItems = [];
         let subtotal = 0;
+        const products = await Product.find({ _id: { $in: cart.items.map((item) => item.productId) } }).lean();
+        const productsById = new Map(products.map((product) => [product._id.toString(), product]));
 
         for (const item of cart.items) {
-            const product = await Product.findById(item.productId);
+            if (!Number.isSafeInteger(item.productQuantity) || item.productQuantity < 1 || item.productQuantity > 10000) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Cart contains an invalid product quantity.',
+                });
+            }
+
+            const product = productsById.get(item.productId.toString());
             if (!product) {
                 return res.status(400).json({
                     success: false,
@@ -97,7 +114,6 @@ export const createOrder = async (req, res) => {
 
         // Create Order
         const isCashfree = paymentMethod === 'cashfree';
-        const isCod = paymentMethod === 'cod';
 
         const order = await Order.create({
             user: userId,
@@ -118,7 +134,7 @@ export const createOrder = async (req, res) => {
             shippingCost: settings.shippingCost,
             totalAmount,
             paymentMethod,
-            paymentStatus: (isCod || isCashfree) ? 'Pending' : 'Completed',
+            paymentStatus: 'Pending',
             status: 'Pending',
         });
 
@@ -150,7 +166,7 @@ export const createOrder = async (req, res) => {
                         },
                         order_meta: {
                             return_url: `${clientOrigin}/orders/${order._id}?order_id={order_id}`,
-                            notify_url: `${req.protocol}://${req.get('host')}/api/payment/webhook`,
+                            notify_url: `${(config.api_origin || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '')}/api/payment/webhook`,
                         },
                         order_note: `VivahStore Order #${order._id}`,
                     };
@@ -175,10 +191,6 @@ export const createOrder = async (req, res) => {
             }
 
             await order.save();
-        } else {
-            // For COD or mock, clear cart immediately
-            cart.items = [];
-            await cart.save();
         }
 
         res.status(201).json({
@@ -259,7 +271,10 @@ export const getOrderById = async (req, res) => {
                 const response = await fetchCashfreeOrderPayments(order.cashfreeOrderId);
                 const payments = response?.data || [];
                 const successfulPayment = Array.isArray(payments)
-                    ? payments.find((p) => (p.payment_status || '').toUpperCase() === 'SUCCESS')
+                    ? payments.find((payment) =>
+                        (payment.payment_status || '').toUpperCase() === 'SUCCESS' &&
+                        isCashfreePaymentMatchingOrder(payment, order.totalAmount)
+                    )
                     : null;
 
                 if (successfulPayment) {
