@@ -74,7 +74,9 @@ export const validateProductionConfig = () => {
             missing.push(`${name} (must be an absolute URL)`);
         }
     }
-    if (config.cashfree.env.toUpperCase() !== 'PRODUCTION') missing.push('CASHFREE_ENV=PRODUCTION');
+    if (!['SANDBOX', 'PRODUCTION'].includes(config.cashfree.env.toUpperCase())) {
+        missing.push('CASHFREE_ENV (must be SANDBOX or PRODUCTION)');
+    }
     const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
     if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) missing.push('TRUST_PROXY_HOPS (must be a non-negative integer)');
 

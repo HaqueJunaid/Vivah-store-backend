@@ -19,7 +19,9 @@ import categoryRoutes from './routes/categoryRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import aj from './config/arcjet.js';
 import { isSpoofedBot } from '@arcjet/inspect';
+import dns from "node:dns";
 
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 const app = express();
 validateProductionConfig();
 app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
