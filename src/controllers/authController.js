@@ -543,16 +543,18 @@ export const forgotPassword = async (req, res) => {
 
         await user.save();
 
-        const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+        const clientOrigin = req.get('origin') || (config.client_origin ? config.client_origin.split(',')[0].trim() : 'http://localhost:5173');
+        const resetUrl = `${clientOrigin}/reset-password/${resetToken}`;
 
         try {
             await sendPasswordResetEmail(user.email, resetUrl, user.name);
             res.status(200).json({ success: true, message: 'Password reset email sent' });
         } catch (error) {
+            console.error('sendPasswordResetEmail failure:', error);
             user.resetPasswordToken = undefined;
             user.resetPasswordExpire = undefined;
             await user.save();
-            return res.status(500).json({ success: false, message: 'Error sending email' });
+            return res.status(500).json({ success: false, message: 'Error sending email. Please try again later.' });
         }
     } catch (error) {
         console.error('Forgot password error:', error);

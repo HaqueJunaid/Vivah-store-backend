@@ -35,6 +35,7 @@ app.get('/health', (req, res) => {
     database: databaseConnected ? 'connected' : 'disconnected',
   });
 });
+
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 600,
@@ -42,6 +43,7 @@ app.use(rateLimit({
   legacyHeaders: false,
   skip: (req) => req.originalUrl.includes('/api/payment/webhook') || req.originalUrl.includes('/api/orders/cashfree-webhook'),
 }));
+
 app.use('/api/auth', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,

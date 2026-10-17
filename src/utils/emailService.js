@@ -21,6 +21,59 @@ transporter.verify((error, success) => {
     }
 });
 
+// Recipient for admin/contact emails
+const STORE_EMAIL = process.env.STORE_EMAIL || process.env.CONTACT_EMAIL || 'vivahstore.india@gmail.com';
+
+const isResendSandboxRestriction = (error) => {
+    const msg = String(error?.message || '') + ' ' + String(error?.response || '');
+    return msg.includes('550') || 
+           msg.includes('testing emails to your own email address') || 
+           msg.includes('resend.com/domains') ||
+           error?.responseCode === 550;
+};
+
+const safeSendMail = async (mailOptions, meta = {}) => {
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[Email Service] Delivered to ${mailOptions.to} (${mailOptions.subject})`);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        if (isResendSandboxRestriction(error)) {
+            console.warn(`\n======================================================================`);
+            console.warn(`[EMAIL SERVICE - RESEND SANDBOX RESTRICTION]`);
+            console.warn(`Target Recipient: ${mailOptions.to}`);
+            console.warn(`Subject: ${mailOptions.subject}`);
+            if (meta.otp) console.warn(`>>> VERIFICATION OTP: ${meta.otp} <<<`);
+            if (meta.resetUrl) console.warn(`>>> PASSWORD RESET LINK: ${meta.resetUrl} <<<`);
+            console.warn(`Notice: Resend testing domain (onboarding@resend.dev) restricts direct delivery to ${STORE_EMAIL}.`);
+            console.warn(`======================================================================\n`);
+
+            // In sandbox mode, forward a copy to the verified store address so it's delivered
+            if (mailOptions.to !== STORE_EMAIL) {
+                try {
+                    const sandboxCopy = {
+                        ...mailOptions,
+                        to: STORE_EMAIL,
+                        subject: `[TEST FOR: ${mailOptions.to}] ${mailOptions.subject}`,
+                    };
+                    await transporter.sendMail(sandboxCopy);
+                    console.log(`[Email Service] Sandbox copy successfully delivered to ${STORE_EMAIL}`);
+                } catch (copyErr) {
+                    console.error('[Email Service] Failed to send sandbox copy to store email:', copyErr.message);
+                }
+            }
+
+            // In development, do not crash the auth/verification flow
+            if (config.env === 'development' || !config.env || config.env === 'test') {
+                return { success: true, sandbox: true, target: mailOptions.to };
+            }
+        }
+
+        console.error(`[Email Service] Failed sending to ${mailOptions.to}:`, error);
+        throw error;
+    }
+};
+
 // Verification Email
 export const sendOTPEmail = async (email, otp, userName) => {
     const mailOptions = {
@@ -31,7 +84,7 @@ export const sendOTPEmail = async (email, otp, userName) => {
     };
 
     try {
-        const info = await transporter.sendMail(mailOptions);
+        await safeSendMail(mailOptions, { otp, userName });
         return { success: true, message: 'OTP sent to email' };
     } catch (error) {
         console.error('Error sending OTP email:', error);
@@ -49,8 +102,7 @@ export const sendWelcomeEmail = async (email, userName) => {
     };
 
     try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Welcome email sent:', info.response);
+        await safeSendMail(mailOptions, { userName });
         return { success: true, message: 'Welcome email sent' };
     } catch (error) {
         console.error('Error sending welcome email:', error);
@@ -62,7 +114,7 @@ export const sendWelcomeEmail = async (email, userName) => {
 export const sendContactEmail = async (name, email, phone, message) => {
     const mailOptions = {
         from: config.email.from,
-        to: config.email.user,
+        to: STORE_EMAIL,
         replyTo: email,
         subject: `New VivahStore Contact Message from ${name}`,
         html: `
@@ -109,8 +161,7 @@ export const sendContactEmail = async (name, email, phone, message) => {
     };
 
     try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Contact form email sent:', info.response);
+        await safeSendMail(mailOptions);
         return { success: true, message: 'Contact email sent to owner' };
     } catch (error) {
         console.error('Error sending contact email:', error);
@@ -128,7 +179,7 @@ export const sendPasswordResetEmail = async (email, resetUrl, userName) => {
     };
 
     try {
-        const info = await transporter.sendMail(mailOptions);
+        await safeSendMail(mailOptions, { resetUrl, userName });
         return { success: true, message: 'Password reset email sent' };
     } catch (error) {
         console.error('Error sending password reset email:', error);
