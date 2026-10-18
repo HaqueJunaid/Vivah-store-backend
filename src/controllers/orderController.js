@@ -212,7 +212,15 @@ export const createOrder = async (req, res) => {
 export const getMyOrders = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orders = await Order.find({ user: userId })
+        // Exclude unpaid pending online payment staging orders
+        const orders = await Order.find({
+            user: userId,
+            $or: [
+                { paymentStatus: 'Completed' },
+                { paymentMethod: 'cod' },
+                { status: { $in: ['Processing', 'Shipped', 'Delivered'] } }
+            ]
+        })
             .populate('items.product', 'imageUrls title')
             .sort({ createdAt: -1 })
             .lean();
@@ -348,8 +356,17 @@ export const getAllOrdersAdmin = async (req, res) => {
 
         const total = await Order.countDocuments(query);
 
-        // Compute total revenue of all orders in system using aggregate (database-level calculation)
+        // Compute total revenue of confirmed/paid orders in system using aggregate (database-level calculation)
         const [revenueAgg] = await Order.aggregate([
+            {
+                $match: {
+                    status: { $ne: 'Cancelled' },
+                    $or: [
+                        { paymentStatus: 'Completed' },
+                        { paymentMethod: 'cod' }
+                    ]
+                }
+            },
             { $group: { _id: null, total: { $sum: '$totalAmount' } } }
         ]);
         const totalRevenue = revenueAgg ? revenueAgg.total : 0;

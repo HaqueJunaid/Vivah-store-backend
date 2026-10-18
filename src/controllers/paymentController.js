@@ -362,6 +362,10 @@ export const handleCashfreeWebhook = async (req, res) => {
 
         if (isUserDropped) {
             console.log(`[Cashfree Webhook] User dropped payment for Order #${order._id}`);
+            if (order.paymentStatus === 'Pending') {
+                await Order.findByIdAndDelete(order._id);
+                console.log(`[Cashfree Webhook USER_DROPPED] Removed pending staging Order #${order._id}`);
+            }
             return res.status(200).json({ status: 'USER_DROPPED_RECORDED' });
         }
 
@@ -476,25 +480,26 @@ export const verifyCashfreePayment = async (req, res) => {
                     });
                 }
 
-                // Check if any payment failed
+                // Check if any payment failed or was cancelled
                 const failedPayment = Array.isArray(payments)
-                    ? payments.find((p) => (p.payment_status || '').toUpperCase() === 'FAILED')
+                    ? payments.find((p) => ['FAILED', 'CANCELLED', 'USER_DROPPED'].includes((p.payment_status || '').toUpperCase()))
                     : null;
 
                 if (failedPayment) {
-                    order.paymentStatus = 'Failed';
+                    const cfStatus = (failedPayment.payment_status || '').toUpperCase();
+                    order.paymentStatus = (cfStatus === 'CANCELLED' || cfStatus === 'USER_DROPPED') ? 'Cancelled' : 'Failed';
                     order.paymentDetails = {
                         cfPaymentId: failedPayment.cf_payment_id,
-                        paymentMessage: failedPayment.payment_message || 'Payment Failed',
+                        paymentMessage: failedPayment.payment_message || (order.paymentStatus === 'Cancelled' ? 'Payment Cancelled' : 'Payment Failed'),
                     };
                     await order.save();
 
                     return res.status(200).json({
                         success: false,
-                        paymentStatus: 'Failed',
+                        paymentStatus: order.paymentStatus,
                         orderStatus: order.status,
                         order,
-                        message: failedPayment.payment_message || 'Payment failed.',
+                        message: failedPayment.payment_message || `Payment ${order.paymentStatus.toLowerCase()}.`,
                     });
                 }
             } catch (cfApiError) {
@@ -519,6 +524,97 @@ export const verifyCashfreePayment = async (req, res) => {
 };
 
 /**
+ * Cancel payment order and rollback pending staging order
+ * Called when the user cancels payment, closes Cashfree checkout, or payment drops
+ */
+export const cancelPaymentOrder = async (req, res) => {
+    try {
+        const { orderId } = req.body;
+        const currentUserId = req.user.id;
+
+        if (!orderId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Order ID is required.',
+            });
+        }
+
+        let order = null;
+        if (mongoose.Types.ObjectId.isValid(orderId)) {
+            order = await Order.findById(orderId);
+        } else {
+            order = await Order.findOne({ cashfreeOrderId: orderId });
+        }
+
+        if (!order) {
+            return res.status(200).json({
+                success: true,
+                message: 'Order not found or already cancelled.',
+            });
+        }
+
+        // Verify authorization
+        const orderUserId = order.user?._id ? order.user._id.toString() : order.user?.toString();
+        if (req.user.role !== 'admin' && orderUserId !== currentUserId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Not authorized to cancel this order.',
+            });
+        }
+
+        // Safety check: Never cancel an order whose payment was completed
+        if (order.paymentStatus === 'Completed') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot cancel an order with completed payment.',
+            });
+        }
+
+        // Pre-check with Cashfree API in case payment completed at the last moment
+        if (config.cashfree.appId && config.cashfree.secretKey && order.cashfreeOrderId) {
+            try {
+                const response = await fetchCashfreeOrderPayments(order.cashfreeOrderId);
+                const payments = response?.data || [];
+                const successfulPayment = Array.isArray(payments)
+                    ? payments.find((p) =>
+                        (p.payment_status || '').toUpperCase() === 'SUCCESS' &&
+                        isCashfreePaymentMatchingOrder(p, order.totalAmount)
+                    )
+                    : null;
+
+                if (successfulPayment) {
+                    order.paymentStatus = 'Completed';
+                    if (order.status === 'Pending') order.status = 'Processing';
+                    await order.save();
+                    await Cart.findOneAndUpdate({ userId: order.user }, { $set: { items: [] } });
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Payment was already completed successfully.',
+                    });
+                }
+            } catch (err) {
+                console.warn('[Cancel Order] Cashfree check warning:', err?.message);
+            }
+        }
+
+        // Delete uncompleted staging order so it is not placed in the database
+        await Order.findByIdAndDelete(order._id);
+        console.log(`[Order Cancelled] Staging Order #${order._id} deleted because payment was cancelled by user.`);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Payment cancelled. Order was not placed.',
+        });
+    } catch (error) {
+        console.error('Cancel payment order error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to cancel order.',
+        });
+    }
+};
+
+/**
  * Get Cashfree Client Configuration (for Frontend SDK initialization)
  */
 export const getCashfreeConfig = (req, res) => {
@@ -528,3 +624,4 @@ export const getCashfreeConfig = (req, res) => {
         isConfigured: Boolean(config.cashfree.appId && config.cashfree.secretKey),
     });
 };
+

@@ -3,6 +3,7 @@ import {
     createCashfreeOrder,
     handleCashfreeWebhook,
     verifyCashfreePayment,
+    cancelPaymentOrder,
     getCashfreeConfig,
 } from '../controllers/paymentController.js';
 import { protect } from '../middlewares/auth.js';
@@ -24,5 +25,8 @@ router.post('/create-order', protect, createCashfreeOrder);
 
 // Verify and synchronize order status
 router.post('/verify', protect, verifyCashfreePayment);
+
+// Cancel uncompleted order when user cancels payment
+router.post('/cancel', protect, cancelPaymentOrder);
 
 export default router;
