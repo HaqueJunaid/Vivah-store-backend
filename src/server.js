@@ -97,8 +97,10 @@ app.use(cookieParser());
 
 // Global Arcjet protection middleware for every route
 app.use(async (req, res, next) => {
-  // Always bypass Arcjet for Cashfree Webhooks so server-to-server callbacks are never blocked by bot/hosting checks
+  // Always bypass Arcjet for health probes and Cashfree Webhooks
   if (
+    req.path === '/' ||
+    req.path === '/health' ||
     req.path.startsWith('/api/payment/webhook') ||
     req.path.startsWith('/api/payment/cashfree-webhook') ||
     req.path.startsWith('/api/orders/cashfree-webhook')
@@ -107,7 +109,11 @@ app.use(async (req, res, next) => {
   }
 
   try {
-    const decision = await aj.protect(req, { requested: 1 });
+    const clientIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim();
+    const decision = await aj.protect(req, {
+      requested: 1,
+      ...(clientIp ? { ip: clientIp } : {}),
+    });
 
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {

@@ -1,6 +1,12 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/config.js';
 
+const isUsingResend = Boolean(
+    config.email.password?.startsWith('re_') ||
+    config.email.host?.includes('resend')
+);
+
+// Fallback transporter for standard SMTP (with strict timeouts so it never hangs indefinitely)
 const transporter = nodemailer.createTransport({
     service: config.email.service,
     host: config.email.host,
@@ -10,32 +16,78 @@ const transporter = nodemailer.createTransport({
         user: config.email.user,
         pass: config.email.password,
     },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
 });
 
-// Verify transporter connection
-transporter.verify((error, success) => {
-    if (error) {
-        console.log('Email service error:', error);
-    } else {
-        console.log('Email service is ready to send messages');
+// Verify connection only if using traditional SMTP (to avoid hanging on Render port 465)
+if (!isUsingResend) {
+    transporter.verify((error, success) => {
+        if (error) {
+            console.log('Email service error:', error.message);
+        } else {
+            console.log('Email service is ready to send messages');
+        }
+    });
+} else {
+    console.log('[Email Service] Resend HTTPS API enabled (port 443 - bypasses Render Free Tier SMTP port blocks)');
+}
+
+// Direct Resend HTTPS REST API delivery (bypasses Render outbound SMTP port 25/465/587 blocks)
+const sendViaResendApi = async (mailOptions) => {
+    const toArray = Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to];
+    const payload = {
+        from: mailOptions.from || config.email.from,
+        to: toArray,
+        subject: mailOptions.subject,
+        html: mailOptions.html,
+    };
+    if (mailOptions.replyTo) {
+        payload.reply_to = mailOptions.replyTo;
     }
-});
+
+    const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${config.email.password}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+        const error = new Error(data.message || `Resend API Error: ${res.status}`);
+        error.statusCode = res.status;
+        error.data = data;
+        throw error;
+    }
+
+    console.log(`[Email Service - Resend HTTP] Delivered to ${mailOptions.to} (ID: ${data.id})`);
+    return { success: true, messageId: data.id };
+};
 
 // Recipient for admin/contact emails
 const STORE_EMAIL = process.env.STORE_EMAIL || process.env.CONTACT_EMAIL || 'vivahstore.india@gmail.com';
 
 const isResendSandboxRestriction = (error) => {
-    const msg = String(error?.message || '') + ' ' + String(error?.response || '');
+    const msg = String(error?.message || '') + ' ' + String(error?.response || '') + ' ' + JSON.stringify(error?.data || '');
     return msg.includes('550') || 
            msg.includes('testing emails to your own email address') || 
            msg.includes('resend.com/domains') ||
-           error?.responseCode === 550;
+           error?.responseCode === 550 ||
+           error?.statusCode === 403;
 };
 
 const safeSendMail = async (mailOptions, meta = {}) => {
     try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`[Email Service] Delivered to ${mailOptions.to} (${mailOptions.subject})`);
+        let info;
+        if (isUsingResend) {
+            info = await sendViaResendApi(mailOptions);
+        } else {
+            info = await transporter.sendMail(mailOptions);
+        }
         return { success: true, messageId: info.messageId };
     } catch (error) {
         if (isResendSandboxRestriction(error)) {
@@ -45,7 +97,7 @@ const safeSendMail = async (mailOptions, meta = {}) => {
             console.warn(`Subject: ${mailOptions.subject}`);
             if (meta.otp) console.warn(`>>> VERIFICATION OTP: ${meta.otp} <<<`);
             if (meta.resetUrl) console.warn(`>>> PASSWORD RESET LINK: ${meta.resetUrl} <<<`);
-            console.warn(`Notice: Resend testing domain (onboarding@resend.dev) restricts direct delivery to ${STORE_EMAIL}.`);
+            console.warn(`Notice: Resend testing domain restricts direct delivery.`);
             console.warn(`======================================================================\n`);
 
             // In sandbox mode, forward a copy to the verified store address so it's delivered
@@ -56,7 +108,11 @@ const safeSendMail = async (mailOptions, meta = {}) => {
                         to: STORE_EMAIL,
                         subject: `[TEST FOR: ${mailOptions.to}] ${mailOptions.subject}`,
                     };
-                    await transporter.sendMail(sandboxCopy);
+                    if (isUsingResend) {
+                        await sendViaResendApi(sandboxCopy);
+                    } else {
+                        await transporter.sendMail(sandboxCopy);
+                    }
                     console.log(`[Email Service] Sandbox copy successfully delivered to ${STORE_EMAIL}`);
                 } catch (copyErr) {
                     console.error('[Email Service] Failed to send sandbox copy to store email:', copyErr.message);
@@ -69,7 +125,7 @@ const safeSendMail = async (mailOptions, meta = {}) => {
             }
         }
 
-        console.error(`[Email Service] Failed sending to ${mailOptions.to}:`, error);
+        console.error(`[Email Service] Failed sending to ${mailOptions.to}:`, error.message || error);
         throw error;
     }
 };
