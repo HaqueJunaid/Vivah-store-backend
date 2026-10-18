@@ -1,40 +1,10 @@
-import nodemailer from 'nodemailer';
 import { config } from '../config/config.js';
 
-const isUsingResend = Boolean(
-    config.email.password?.startsWith('re_') ||
-    config.email.host?.includes('resend')
-);
+// Recipient for admin/contact emails
+const STORE_EMAIL = process.env.STORE_EMAIL || process.env.CONTACT_EMAIL || 'vivahstore.india@gmail.com';
 
-// Fallback transporter for standard SMTP (with strict timeouts so it never hangs indefinitely)
-const transporter = nodemailer.createTransport({
-    service: config.email.service,
-    host: config.email.host,
-    port: config.email.port,
-    secure: config.email.secure,
-    auth: {
-        user: config.email.user,
-        pass: config.email.password,
-    },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 10000,
-});
-
-// Verify connection only if using traditional SMTP (to avoid hanging on Render port 465)
-if (!isUsingResend) {
-    transporter.verify((error, success) => {
-        if (error) {
-            console.log('Email service error:', error.message);
-        } else {
-            console.log('Email service is ready to send messages');
-        }
-    });
-} else {
-    console.log('[Email Service] Resend HTTPS API enabled (port 443 - bypasses Render Free Tier SMTP port blocks)');
-}
-
-// Direct Resend HTTPS REST API delivery (bypasses Render outbound SMTP port 25/465/587 blocks)
+// Direct Resend HTTPS REST API delivery over Port 443
+// Works seamlessly on Render, Hostinger VPS, and local environments without SMTP port restrictions
 const sendViaResendApi = async (mailOptions) => {
     const toArray = Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to];
     const payload = {
@@ -68,9 +38,6 @@ const sendViaResendApi = async (mailOptions) => {
     return { success: true, messageId: data.id };
 };
 
-// Recipient for admin/contact emails
-const STORE_EMAIL = process.env.STORE_EMAIL || process.env.CONTACT_EMAIL || 'vivahstore.india@gmail.com';
-
 const isResendSandboxRestriction = (error) => {
     const msg = String(error?.message || '') + ' ' + String(error?.response || '') + ' ' + JSON.stringify(error?.data || '');
     return msg.includes('550') || 
@@ -82,12 +49,7 @@ const isResendSandboxRestriction = (error) => {
 
 const safeSendMail = async (mailOptions, meta = {}) => {
     try {
-        let info;
-        if (isUsingResend) {
-            info = await sendViaResendApi(mailOptions);
-        } else {
-            info = await transporter.sendMail(mailOptions);
-        }
+        const info = await sendViaResendApi(mailOptions);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         if (isResendSandboxRestriction(error)) {
@@ -108,11 +70,7 @@ const safeSendMail = async (mailOptions, meta = {}) => {
                         to: STORE_EMAIL,
                         subject: `[TEST FOR: ${mailOptions.to}] ${mailOptions.subject}`,
                     };
-                    if (isUsingResend) {
-                        await sendViaResendApi(sandboxCopy);
-                    } else {
-                        await transporter.sendMail(sandboxCopy);
-                    }
+                    await sendViaResendApi(sandboxCopy);
                     console.log(`[Email Service] Sandbox copy successfully delivered to ${STORE_EMAIL}`);
                 } catch (copyErr) {
                     console.error('[Email Service] Failed to send sandbox copy to store email:', copyErr.message);
